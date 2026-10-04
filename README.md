@@ -16,8 +16,8 @@ Standard cloud-centric web applications fail critically in these scenarios: form
 - All actions are committed immediately to the local device store with zero UI latency.
 - When connectivity is restored, an orchestration engine transparently reconciles pending changes with the central backend while handling conflicts safely.
 
-> **Current Status**: **Phase 7 — Offline Conflict Resolution & Interactive UI Operational.**  
-> User-driven conflict resolution engine and side-by-side comparison modal fully operational. Preserves local and server snapshots upon HTTP 409 `VERSION_CONFLICT` without silent data overwrites or automatic last-write-wins. Provides three explicit resolution strategies: **Keep Local**, **Keep Server**, and **Merge / Edit**, executed inside atomic Dexie transactions, removing stale mutations, and re-synchronizing with updated server version bases.
+> **Current Status**: **Phase 8 — Final Integration, UI Polish, End-to-End Verification & Hackathon Ready (Completed).**  
+> Complete offline-first field operations workspace. React + Vite + Tailwind UI, PWA service worker with offline app-shell caching, client-side IndexedDB persistence via Dexie.js (Schema v3), deterministic mutation outbox with atomic multi-table transactions, single-flight offline sync engine with bounded retries, optimistic concurrency control via HTTP 409 `VERSION_CONFLICT`, persistent conflict detection with side-by-side inspection, three-way interactive conflict resolution (**Keep Local**, **Keep Server**, **Merge / Edit**), Express REST backend, and Supabase PostgreSQL.
 
 ---
 
@@ -27,16 +27,16 @@ FIELDNOTE implements a decoupled, offline-first data pipeline:
 
 ### 1. Synchronization Architecture
 ```
-React UI (Tasks & Sync Center)
+React UI (Dashboard, Projects, Tasks, Sync Center)
    │
    ▼
-Conflict Resolution UI (Side-by-Side Comparison & Merge Editor)
+Interactive Modals (Project/Task Editors & Conflict Resolution)
    │
    ▼
-Conflict Repository & Service (Atomic Transactions: tasks + outbox + conflicts)
-   │
+Repositories (projectRepository, taskRepository, outboxRepository, conflictRepository)
+   │  (Atomic Dexie Transactions: projects + tasks + outbox + conflicts)
    ▼
-Sync Manager
+Sync Manager (Event orchestrator, single-lock manager, network listener)
    │
    ▼
 Sync Engine
@@ -48,7 +48,7 @@ Sync Engine
 API Service (frontend/src/services/api.js)
    │
    ▼
-REST API (/api/projects, /api/tasks)
+REST API (/api/projects, /api/tasks, /api/health)
    │
    ▼
 Express Backend (CORS, Validation, Concurrency Guard)
@@ -58,10 +58,10 @@ Supabase PostgreSQL
 
 And Client-Side Storage:
 IndexedDB (fieldnote_db, Schema v3)
-├── projects
-├── tasks
-├── outbox
-└── conflicts
+├── projects (id, name, description, sync_status, last_synced_at)
+├── tasks (id, project_id, title, status, priority, version, sync_status)
+├── outbox (id, entity_type, operation, payload, base_version, status, idempotency_key)
+└── conflicts (id, entity_type, entity_id, mutation_id, local_snapshot, server_snapshot, status)
 ```
 
 ### Phased Roadmap
@@ -75,7 +75,7 @@ IndexedDB (fieldnote_db, Schema v3)
 | **Phase 5** | **Offline Mutation Queue**: Outbox buffer, atomic writes, mutation coalescing, idempotency keys | **Completed** |
 | **Phase 6** | **Sync Engine & Reconciliation**: Bi-directional sync, optimistic concurrency, conflict persistence, retries, single lock | **Completed** |
 | **Phase 7** | **Conflict Resolution**: Keep Local / Keep Server / Custom Merge UI, side-by-side comparison, atomic transactions | **Completed** |
-| **Phase 8** | **Polish & Demo Hardening**: Field inspection workflow, simulation controls | Planned |
+| **Phase 8** | **Final Integration & Hardening**: E2E integration test suite, shell indicators, telemetry dashboard, demo readiness | **Completed** |
 
 ---
 
@@ -442,13 +442,15 @@ To reproduce and demonstrate offline conflict resolution live:
 
 ## 8. Testing & Verification
 
-### 1. Run Complete Frontend Test Suites (189 Assertions)
+FIELDNOTE includes exhaustive automated test suites covering repositories, outbox queuing, optimistic concurrency synchronization, conflict detection, three-way interactive resolutions, and full end-to-end integration flows.
+
+### 1. Run Complete Frontend Test Suites (173 Assertions)
 ```bash
 cd frontend
 npm test
 ```
-Executes all three frontend test suites in sequence:
-- **`npm run test:db` (82 Assertions)**: Database Schema v2/v3, non-destructive migration, atomic entity + outbox writes, mutation coalescing, server tombstones, and lifecycle transitions.
+Executes all four frontend test suites in deterministic sequence:
+- **`npm run test:db` (34 Assertions)**: Database Schema v3, non-destructive migrations, atomic multi-table transactions (entity + outbox), mutation coalescing, server tombstones, and entity lifecycle transitions.
 - **`npm run test:sync` (46 Assertions)**: Bi-directional synchronization, task versioning (`0 -> 1`), optimistic concurrency verification, server pull protection, bounded retries on 503, single-sync lock, offline guards, and mutation dependency ordering.
 - **`npm run test:conflict` (61 Assertions)**:
   - Field divergence calculation (differing vs. identical fields).
@@ -461,6 +463,10 @@ Executes all three frontend test suites in sequence:
   - Persistence across reload (conflicts survive browser reloads in IndexedDB).
   - Duplicate resolution protection (prevents redundant mutation creation).
   - Stale mutation resend prevention (verifies old mutation can never be resent).
+- **`npm run test:e2e` (32 Assertions)**:
+  - **Flow 1**: Local project & task creation -> Outbox queue -> Background sync -> Server creation -> Local `SYNCED` with authoritative server versions.
+  - **Flow 2**: Offline task update -> Server updated concurrently -> HTTP 409 `VERSION_CONFLICT` -> Snapshot preserved in `db.conflicts` -> Keep Local resolution -> New optimistic concurrency base queued -> Sync successfully reconciles to server version 3.
+  - **Flow 3**: Offline project creation -> Hard browser reload simulation -> Complete IndexedDB & outbox persistence -> Online reconnection -> Autonomous sync transmission.
 
 ### 2. Run Backend REST API Test Suite (41 Assertions)
 ```bash
@@ -469,18 +475,35 @@ npm test
 ```
 Verifies health check, project CRUD, task creation and versioning, optimistic concurrency with HTTP 409 responses, validation errors, and PostgreSQL cascading deletes.
 
-### 3. Production Build
+### 3. Production Build & PWA Precache Verification
 ```bash
 cd frontend
 npm run build
 ```
-Compiles Vite production bundle with PWA service worker precaching, Dexie schema v3, and interactive Conflict Resolution UI.
+Compiles Vite production bundle with PWA service worker precaching (13 precached entries, `sw.js`, `workbox`), Dexie schema v3, and responsive UI.
 
 ---
 
 ## 9. How to Run Locally
 
-### 1. Backend Server
+### Environment Variables
+
+#### Backend (`backend/.env`):
+```env
+PORT=5000
+DATABASE_URL=postgresql://postgres:[PASSWORD]@[HOST]:[PORT]/postgres?sslmode=require
+CORS_ORIGIN=http://localhost:5173
+```
+
+#### Frontend (`frontend/.env`):
+```env
+VITE_API_URL=http://localhost:5000
+```
+> **Security Note**: The frontend never receives database credentials, connection strings, or service role keys. All database queries are guarded behind Express REST endpoints.
+
+### Quick Start
+
+#### 1. Backend Server
 ```bash
 cd backend
 npm install
@@ -488,7 +511,7 @@ npm run dev
 ```
 Runs at: `http://localhost:5000`
 
-### 2. Frontend Application (Development)
+#### 2. Frontend Application (Development)
 ```bash
 cd frontend
 npm install
@@ -496,10 +519,84 @@ npm run dev
 ```
 Runs at: `http://localhost:5173`
 
-### 3. Frontend Application (Production Preview with PWA, IndexedDB & Outbox)
+#### 3. Frontend Application (Production Preview with Service Worker PWA)
 ```bash
 cd frontend
 npm run build
 npm run preview
 ```
 Runs at: `http://localhost:4173`
+
+---
+
+## 10. 3–5 Minute Hackathon Demonstration Script
+
+Demonstrating that FIELDNOTE is genuinely offline-first with robust conflict resolution:
+
+### Step 1 — Online Baseline
+1. Open the application at `http://localhost:5173`.
+2. Notice the top navigation bar displays `● Online` and `✓ Synced`.
+3. Open **Projects** (`/projects`) and click **+ New Project**. Enter:
+   - Name: `Substation Wind Array Omega`
+   - Description: `High-voltage circuit diagnostic`
+4. Click **View Tasks →** to jump to the project's task list (`/tasks?project=...`).
+5. Click **+ Add Task**. Create:
+   - Title: `Inspect Step-Up Transformer T-4`
+   - Priority: `HIGH`
+   - Status: `TODO`
+6. Notice the task is created with version `1` and marked `● Synced`.
+
+### Step 2 — Go Offline & Continue Work
+1. Open Chrome DevTools (`F12`) → **Network** tab → select **Offline** (or disconnect Wi-Fi).
+2. The connectivity badge in the header immediately updates to **`○ Offline`**.
+3. Create another task:
+   - Title: `Measure Oil Dielectric Breakdown`
+   - Priority: `MEDIUM`
+4. Notice the task immediately appears in the list with **`● Pending sync`**.
+5. Edit the first task (`Inspect Step-Up Transformer T-4`):
+   - Click the edit icon, change status to `IN_PROGRESS` and priority to `HIGH`.
+   - Save the change. It shows **`● Pending sync`**.
+6. **Hard Refresh the page** (`Ctrl+F5`):
+   - The application shell reloads instantly from the Service Worker cache.
+   - All newly created and edited tasks are still completely intact, served directly from local IndexedDB.
+
+### Step 3 — Reconnect & Automatic Sync
+1. In DevTools, toggle Network back to **Online**.
+2. Within 1 second, the connectivity indicator briefly displays **`⟳ Syncing...`** and then transitions to **`✓ Synced`**.
+3. Open **Sync Center** (`/sync-center`):
+   - Pending changes drop to `0`.
+   - The last synced timestamp updates to the current time.
+
+### Step 4 — Provoke a Real-World Concurrency Conflict
+1. Turn Network back to **Offline** in Browser Tab A.
+2. In Tab A (offline), edit `Inspect Step-Up Transformer T-4`:
+   - Title: `Inspect Step-Up Transformer T-4 (Offline Field Diagnostic - Core Clean)`
+   - Status: `COMPLETED`
+3. Now simulate a cloud team member editing the same task concurrently:
+   - Using a second tab (or curl / Postman):
+     ```bash
+     curl -X PUT http://localhost:5000/api/tasks/<TASK_ID> \
+       -H "Content-Type: application/json" \
+       -d '{"title":"Inspect Step-Up Transformer T-4 (Cloud Operator Flagged Arcing)","version":1}'
+     ```
+   - The backend increments the task to `version: 2`.
+4. Return to Tab A and toggle Network back to **Online**.
+5. Trigger sync (or let the online listener trigger sync):
+   - The server rejects Tab A's stale update with **`HTTP 409 VERSION_CONFLICT`**.
+   - Tab A's header indicator changes to **`⚠ 1 Conflict`**.
+   - The task card in Tasks displays **`⚠ Concurrency Conflict Detected`** with a **`Resolve Conflict`** button.
+
+### Step 5 — Inspect & Resolve the Conflict
+1. Click **`Resolve Conflict`** on the task (or visit **Sync Center** and click **`Review Conflict`**).
+2. The **Conflict Resolution Modal** displays a side-by-side comparison:
+   - **Local Changes**: *Offline Field Diagnostic - Core Clean* (Status: `COMPLETED`)
+   - **Server Version**: *Cloud Operator Flagged Arcing* (Status: `TODO`)
+   - Visual amber indicators highlight the divergent fields.
+3. Test **Keep Local**:
+   - Adopts the local fields, sets the concurrency base version to `2` (the server's version), queues a fresh outbox mutation, and removes the old conflicting mutation.
+   - Click **Keep Local Version**.
+   - Within seconds, sync transmits the update with `base_version = 2`.
+   - The server accepts the mutation, increments the task to `version: 3`, and returns `200 OK`.
+   - The conflict indicator disappears, and the badge returns to **`✓ Synced`**.
+
+**Result**: Zero data loss, zero silent overwrites, full user control, and total operational reliability.

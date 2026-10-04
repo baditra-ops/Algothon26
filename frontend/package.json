@@ -11,7 +11,8 @@
     "test:db": "node src/db/__tests__/repositoryTestSuite.js",
     "test:sync": "node src/sync/__tests__/syncTestSuite.js",
     "test:conflict": "node src/sync/__tests__/conflictTestSuite.js",
-    "test": "node src/db/__tests__/repositoryTestSuite.js && node src/sync/__tests__/syncTestSuite.js && node src/sync/__tests__/conflictTestSuite.js"
+    "test:e2e": "node src/sync/__tests__/e2eIntegrationTestSuite.js",
+    "test": "node src/db/__tests__/repositoryTestSuite.js && node src/sync/__tests__/syncTestSuite.js && node src/sync/__tests__/conflictTestSuite.js && node src/sync/__tests__/e2eIntegrationTestSuite.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

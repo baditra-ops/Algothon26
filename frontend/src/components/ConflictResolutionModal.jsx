@@ -1,25 +1,16 @@
 import React, { useState } from 'react';
 import {
   AlertTriangle,
-  CheckCircle2,
-  Clock,
-  Layers,
-  ArrowRight,
-  RotateCcw,
-  Sparkles,
   GitMerge,
   Server,
   Smartphone,
   X,
-  ShieldAlert,
-  HelpCircle
+  ShieldAlert
 } from 'lucide-react';
 import { conflictService, calculateFieldDiffs } from '../sync/index.js';
 import { TASK_STATUS, TASK_PRIORITY } from '../db/schema.js';
 
-export function ConflictResolutionModal({ conflict, isOpen, onClose, onResolved }) {
-  if (!isOpen || !conflict) return null;
-
+function ConflictResolutionModalDialog({ conflict, onClose, onResolved }) {
   const [mode, setMode] = useState('CHOICE'); // 'CHOICE' | 'MERGE' | 'CONFIRM_SERVER'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -501,4 +492,16 @@ export function ConflictResolutionModal({ conflict, isOpen, onClose, onResolved 
   );
 }
 
+export function ConflictResolutionModal({ conflict, isOpen, onClose, onResolved }) {
+  if (!isOpen || !conflict) return null;
+  return (
+    <ConflictResolutionModalDialog
+      conflict={conflict}
+      onClose={onClose}
+      onResolved={onResolved}
+    />
+  );
+}
+
 export default ConflictResolutionModal;
+

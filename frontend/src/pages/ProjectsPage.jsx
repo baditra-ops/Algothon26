@@ -1,26 +1,35 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   FolderKanban,
   Plus,
   Trash2,
-  Calendar,
-  Layers,
-  Database,
-  RefreshCw,
   Sparkles,
-  AlertCircle
+  Edit2,
+  ArrowRight,
+  CheckSquare,
+  Database,
+  X
 } from 'lucide-react';
 import { projectRepository } from '../db/repositories/projectRepository';
-import { getLocalDatabaseStats, clearLocalDatabase, seedDevelopmentData } from '../db/devTools';
+import { getLocalDatabaseStats, seedDevelopmentData } from '../db/devTools';
 
 export function ProjectsPage() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const [stats, setStats] = useState(null);
   const [actionNotice, setActionNotice] = useState('');
+
+  // Create form state
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Edit form state
+  const [editingProject, setEditingProject] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
 
   const loadProjects = async () => {
     setLoading(true);
@@ -44,24 +53,54 @@ export function ProjectsPage() {
     e.preventDefault();
     if (!name.trim()) return;
 
+    setIsSubmitting(true);
     try {
       await projectRepository.createProject({ name, description });
       setName('');
       setDescription('');
       setShowCreateModal(false);
-      setActionNotice('Project saved to IndexedDB (Client Store)');
+      setActionNotice('Project saved to IndexedDB (PENDING_CREATE)');
       setTimeout(() => setActionNotice(''), 3000);
       await loadProjects();
     } catch (err) {
       alert(`Error creating project: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleStartEdit = (proj) => {
+    setEditingProject(proj);
+    setEditName(proj.name);
+    setEditDescription(proj.description || '');
+  };
+
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    if (!editName.trim() || !editingProject) return;
+
+    setIsSubmitting(true);
+    try {
+      await projectRepository.updateProject(editingProject.id, {
+        name: editName,
+        description: editDescription
+      });
+      setEditingProject(null);
+      setActionNotice('Project updated in IndexedDB (PENDING_UPDATE)');
+      setTimeout(() => setActionNotice(''), 3000);
+      await loadProjects();
+    } catch (err) {
+      alert(`Error updating project: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this project locally?')) return;
+    if (!window.confirm('Delete this project locally? Child tasks will also be removed/tombstoned.')) return;
     try {
       await projectRepository.deleteProject(id);
-      setActionNotice('Project deleted from active local store');
+      setActionNotice('Project removed from active local store');
       setTimeout(() => setActionNotice(''), 3000);
       await loadProjects();
     } catch (err) {
@@ -76,16 +115,8 @@ export function ProjectsPage() {
     await loadProjects();
   };
 
-  const handleClear = async () => {
-    if (!window.confirm('Clear all local IndexedDB records? This cannot be undone.')) return;
-    await clearLocalDatabase();
-    setActionNotice('Local IndexedDB cleared');
-    setTimeout(() => setActionNotice(''), 3000);
-    await loadProjects();
-  };
-
   return (
-    <div className="space-y-8 max-w-7xl mx-auto py-4">
+    <div className="space-y-8 max-w-7xl mx-auto py-2">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -95,7 +126,7 @@ export function ProjectsPage() {
           </div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight">Projects Workspace</h1>
           <p className="text-sm text-slate-400 mt-1">
-            Locally persisted project containers for frontline inspection sites and field operations.
+            Persisted locally with atomic outbox mutations. Operates with zero network latency.
           </p>
         </div>
 
@@ -103,7 +134,7 @@ export function ProjectsPage() {
           <button
             type="button"
             onClick={handleSeed}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
             title="Seed sample data into IndexedDB"
           >
             <Sparkles className="h-3.5 w-3.5 text-amber-400" />
@@ -113,7 +144,7 @@ export function ProjectsPage() {
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/40 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/40 transition-colors cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             <span>New Local Project</span>
@@ -123,16 +154,16 @@ export function ProjectsPage() {
 
       {/* Action Notice Banner */}
       {actionNotice && (
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/40 px-4 py-2.5 text-xs text-emerald-300 flex items-center justify-between">
-          <span className="flex items-center gap-2">
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/40 px-4 py-2.5 text-xs text-emerald-300 flex items-center justify-between animate-fade-in">
+          <span className="flex items-center gap-2 font-medium">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
             {actionNotice}
           </span>
-          <span className="text-[11px] text-slate-400">IndexedDB: fieldnote_db</span>
+          <span className="text-[11px] text-slate-400 font-mono">IndexedDB: fieldnote_db</span>
         </div>
       )}
 
-      {/* Modal / Quick Create Box */}
+      {/* Create Modal */}
       {showCreateModal && (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-6 shadow-2xl backdrop-blur-md space-y-4">
           <div className="flex items-center justify-between">
@@ -144,7 +175,7 @@ export function ProjectsPage() {
               onClick={() => setShowCreateModal(false)}
               className="text-xs text-slate-400 hover:text-white"
             >
-              Cancel
+              <X className="h-4 w-4" />
             </button>
           </div>
 
@@ -180,15 +211,80 @@ export function ProjectsPage() {
               <button
                 type="button"
                 onClick={() => setShowCreateModal(false)}
+                disabled={isSubmitting}
                 className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
               >
-                Dismiss
+                Cancel
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                disabled={isSubmitting}
+                className="px-5 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors cursor-pointer"
               >
-                Save to IndexedDB
+                {isSubmitting ? 'Saving...' : 'Save to IndexedDB'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editingProject && (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-6 shadow-2xl backdrop-blur-md space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <Edit2 className="h-5 w-5 text-teal-400" />
+              <span>Edit Local Project</span>
+            </h3>
+            <button
+              onClick={() => setEditingProject(null)}
+              className="text-xs text-slate-400 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <form onSubmit={handleUpdate} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">
+                Project Name <span className="text-rose-400">*</span>
+              </label>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">
+                Description / Site Notes
+              </label>
+              <textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                rows={2}
+                className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setEditingProject(null)}
+                disabled={isSubmitting}
+                className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="px-5 py-2 rounded-lg text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white transition-colors cursor-pointer"
+              >
+                {isSubmitting ? 'Updating...' : 'Update Project'}
               </button>
             </div>
           </form>
@@ -245,13 +341,22 @@ export function ProjectsPage() {
                     ● {project.sync_status}
                   </span>
 
-                  <button
-                    onClick={() => handleDelete(project.id)}
-                    className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 transition-colors"
-                    title="Delete local project"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleStartEdit(project)}
+                      className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                      title="Edit project"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(project.id)}
+                      className="p-1.5 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition-colors"
+                      title="Delete local project"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <h3 className="text-base font-bold text-white tracking-tight">{project.name}</h3>
@@ -260,9 +365,19 @@ export function ProjectsPage() {
                 </p>
               </div>
 
-              <div className="pt-3 border-t border-slate-800/80 text-[11px] text-slate-500 flex items-center justify-between">
-                <span className="font-mono text-[10px]">ID: {project.id.slice(0, 8)}...</span>
-                <span>{new Date(project.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                <Link
+                  to={`/tasks?project=${project.id}`}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
+                >
+                  <CheckSquare className="h-3.5 w-3.5" />
+                  <span>View Tasks</span>
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+
+                <span className="font-mono text-[10px] text-slate-500">
+                  ID: {project.id.slice(0, 8)}...
+                </span>
               </div>
             </div>
           ))}
@@ -284,15 +399,10 @@ export function ProjectsPage() {
           >
             Refresh
           </button>
-          <span>·</span>
-          <button
-            onClick={handleClear}
-            className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer"
-          >
-            Clear Local Database
-          </button>
         </div>
       </div>
     </div>
   );
 }
+
+export default ProjectsPage;

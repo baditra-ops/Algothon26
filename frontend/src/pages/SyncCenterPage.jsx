@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   RefreshCw,
-  Database,
-  Layers,
-  ArrowUpRight,
-  ShieldCheck,
   Clock,
   Sparkles,
   Trash2,
@@ -12,7 +8,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   RotateCw,
-  Wifi,
   WifiOff
 } from 'lucide-react';
 import {
@@ -127,15 +122,15 @@ export function SyncCenterPage() {
         <div>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 mb-2">
             <RotateCw className={`h-3 w-3 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>Synchronization Engine · Prompt 6</span>
+            <span>Bi-Directional Offline Sync Engine</span>
           </div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight">Sync & Operations Center</h1>
           <p className="text-sm text-slate-400 mt-1">
-            Bi-directional synchronization engine between local IndexedDB and central REST API.
+            Real-time telemetry and management for local IndexedDB mutations and cloud reconciliation.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Sync Now Action */}
           <button
             type="button"
@@ -154,10 +149,10 @@ export function SyncCenterPage() {
           <button
             type="button"
             onClick={handleSeed}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
           >
             <Sparkles className="h-3.5 w-3.5 text-amber-400" />
-            <span>Seed Demo</span>
+            <span>Seed Demo Data</span>
           </button>
 
           <button
@@ -172,53 +167,84 @@ export function SyncCenterPage() {
       </div>
 
       {notice && (
-        <div className="rounded-xl border border-cyan-500/30 bg-cyan-950/40 px-4 py-2.5 text-xs text-cyan-300">
-          {notice}
+        <div className="rounded-xl border border-cyan-500/30 bg-cyan-950/40 px-4 py-2.5 text-xs text-cyan-300 animate-fade-in font-medium flex items-center justify-between">
+          <span>{notice}</span>
+          <span className="text-[10px] text-slate-500 font-mono">Telemetry updated</span>
         </div>
       )}
 
       {/* Sync Engine Telemetry Status Card */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3.5">
           <div
-            className={`p-2.5 rounded-xl border ${
-              engineState.isOnline
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+            className={`p-3 rounded-xl border ${
+              !engineState.isOnline
+                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                : isSyncing
+                ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
+                : engineState.state === SYNC_STATE.CONFLICT
+                ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
             }`}
           >
-            {engineState.isOnline ? <Wifi className="h-5 w-5" /> : <WifiOff className="h-5 w-5" />}
+            {!engineState.isOnline ? (
+              <WifiOff className="h-6 w-6" />
+            ) : isSyncing ? (
+              <RotateCw className="h-6 w-6 animate-spin" />
+            ) : engineState.state === SYNC_STATE.CONFLICT ? (
+              <AlertTriangle className="h-6 w-6" />
+            ) : (
+              <CheckCircle2 className="h-6 w-6" />
+            )}
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-white">
-                Engine Status: {engineState.state}
+              <span className="text-base font-bold text-white">
+                {!engineState.isOnline
+                  ? "You're Offline"
+                  : isSyncing
+                  ? 'Synchronizing with Cloud...'
+                  : engineState.state === SYNC_STATE.CONFLICT
+                  ? 'Concurrency Conflict Detected'
+                  : mutations.filter((m) => m.status === 'PENDING').length > 0
+                  ? 'Unsent Changes Waiting to Sync'
+                  : 'Everything is Synchronized'}
               </span>
               <span
                 className={`px-2 py-0.5 rounded font-mono font-semibold text-[10px] ${
-                  engineState.state === SYNC_STATE.SYNCING
+                  !engineState.isOnline
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    : isSyncing
                     ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 animate-pulse'
                     : engineState.state === SYNC_STATE.CONFLICT
-                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                    : engineState.state === SYNC_STATE.ERROR
-                    ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                    : engineState.state === SYNC_STATE.OFFLINE
-                    ? 'bg-slate-700 text-slate-300'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                     : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                 }`}
               >
-                {engineState.state}
+                {!engineState.isOnline ? 'OFFLINE' : engineState.state}
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {engineState.isOnline ? 'Online · Auto-sync active' : 'Offline · Mutations queued locally'}
-              {engineState.lastSyncAt && ` · Last synced: ${new Date(engineState.lastSyncAt).toLocaleTimeString()}`}
+            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+              {!engineState.isOnline
+                ? 'Changes will be saved locally to IndexedDB and synchronized automatically when connection returns.'
+                : isSyncing
+                ? 'Processing outbox mutation queue and reconciling authoritative server state...'
+                : engineState.state === SYNC_STATE.CONFLICT
+                ? 'Server rejected a stale update (HTTP 409). Review local and cloud versions below.'
+                : mutations.filter((m) => m.status === 'PENDING').length > 0
+                ? `${mutations.filter((m) => m.status === 'PENDING').length} mutation(s) queued for upstream transmission.`
+                : 'Local IndexedDB store matches central Supabase PostgreSQL database.'}
+              {engineState.lastSyncAt && (
+                <span className="text-slate-500 block sm:inline sm:ml-2">
+                  · Last sync: {new Date(engineState.lastSyncAt).toLocaleTimeString()}
+                </span>
+              )}
             </p>
           </div>
         </div>
 
         {engineState.lastSummary && (
-          <div className="flex items-center gap-4 text-xs font-mono text-slate-400">
+          <div className="flex items-center gap-4 text-xs font-mono text-slate-400 bg-slate-950/80 px-4 py-2.5 rounded-xl border border-slate-800">
             <div>
               Processed: <span className="text-white font-bold">{engineState.lastSummary.processed}</span>
             </div>
