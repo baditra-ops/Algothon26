@@ -51,9 +51,8 @@ export const syncEngine = {
    * 4. Update sync state telemetry
    */
   async sync(options = {}) {
-    const isOnline = (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean')
-      ? navigator.onLine
-      : true;
+    const stateObj = syncState.getState();
+    const isOnline = stateObj.isOnline && ((typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean') ? navigator.onLine : true);
 
     if (!isOnline) {
       syncState.setOnlineStatus(false);

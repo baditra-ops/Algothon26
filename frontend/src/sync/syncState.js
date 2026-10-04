@@ -19,6 +19,7 @@ class SyncStateManager {
     this.current = {
       state: isOnline ? SYNC_STATE.IDLE : SYNC_STATE.OFFLINE,
       isOnline,
+      isSimulatedOffline: false,
       lastSyncAt: null,
       lastError: null,
       lastSummary: {
@@ -52,6 +53,11 @@ class SyncStateManager {
   }
 
   setOnlineStatus(isOnline) {
+    if (this.current.isSimulatedOffline) {
+      // Simulation mode overrides physical network events
+      return;
+    }
+
     const nextState = !isOnline
       ? SYNC_STATE.OFFLINE
       : this.current.state === SYNC_STATE.OFFLINE
@@ -59,6 +65,20 @@ class SyncStateManager {
         : this.current.state;
 
     this.setState({ isOnline, state: nextState });
+  }
+
+  toggleSimulationOffline() {
+    const nextSim = !this.current.isSimulatedOffline;
+    const realOnline = (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean')
+      ? navigator.onLine
+      : true;
+    const effectiveOnline = nextSim ? false : realOnline;
+    this.setState({
+      isSimulatedOffline: nextSim,
+      isOnline: effectiveOnline,
+      state: effectiveOnline ? SYNC_STATE.IDLE : SYNC_STATE.OFFLINE
+    });
+    return nextSim;
   }
 
   subscribe(listener) {

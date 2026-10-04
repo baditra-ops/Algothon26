@@ -63,11 +63,25 @@ export function ConnectionStatus() {
   if (!isOnline) {
     return (
       <div
-        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-950/90 text-amber-300 border border-amber-600/70 shadow-sm transition-all duration-300 animate-pulse cursor-default"
-        title="Network disconnected — All edits saved locally to IndexedDB"
+        onClick={() => {
+          if (engineState.isSimulatedOffline) {
+            syncState.toggleSimulationOffline();
+            syncManager.triggerSync();
+          }
+        }}
+        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-950/90 text-amber-300 border border-amber-600/70 shadow-sm transition-all duration-300 animate-pulse ${
+          engineState.isSimulatedOffline ? 'cursor-pointer hover:bg-amber-900/90' : 'cursor-default'
+        }`}
+        title={
+          engineState.isSimulatedOffline
+            ? 'Simulated Offline Mode active — Click to reconnect online'
+            : 'Network disconnected — All edits saved locally to IndexedDB'
+        }
       >
         <WifiOff className="h-3.5 w-3.5 text-amber-400" />
-        <span className="tracking-wide">○ Offline</span>
+        <span className="tracking-wide">
+          {engineState.isSimulatedOffline ? '○ Offline (Sim)' : '○ Offline'}
+        </span>
       </div>
     );
   }

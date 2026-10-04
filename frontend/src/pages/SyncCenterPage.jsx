@@ -20,6 +20,7 @@ import {
   seedDevelopmentData
 } from '../db/devTools';
 import { syncManager, syncState, SYNC_STATE, calculateFieldDiffs } from '../sync/index.js';
+import { SYNC_STATUS } from '../db/schema.js';
 import ConflictResolutionModal from '../components/ConflictResolutionModal.jsx';
 
 export function SyncCenterPage() {
@@ -144,6 +145,31 @@ export function SyncCenterPage() {
           >
             <RotateCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
             <span>{isSyncing ? 'Synchronizing...' : 'Sync Now'}</span>
+          </button>
+
+          {/* Simulate Offline Mode Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              const isSim = syncState.toggleSimulationOffline();
+              setNotice(
+                isSim
+                  ? 'Simulated Offline Mode enabled. Outbox will buffer all mutations.'
+                  : 'Reconnected to network. Triggering background synchronization...'
+              );
+              if (!isSim) {
+                syncManager.triggerSync();
+              }
+            }}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+              engineState.isSimulatedOffline
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30'
+                : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+            }`}
+            title="Toggle simulated offline mode to test offline behavior without touching Wi-Fi or DevTools"
+          >
+            <WifiOff className="h-3.5 w-3.5 text-amber-400" />
+            <span>{engineState.isSimulatedOffline ? 'Resume Online' : 'Simulate Offline'}</span>
           </button>
 
           <button
@@ -577,7 +603,7 @@ export function SyncCenterPage() {
                 <span
                   className={`px-2 py-0.5 rounded font-mono font-semibold text-[10px] ${
                     t.sync_status === SYNC_STATUS.CONFLICT
-                      ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                      ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
                       : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
                   }`}
                 >

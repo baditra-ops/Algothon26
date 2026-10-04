@@ -16,6 +16,9 @@ export default function App() {
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="sync-center" element={<SyncCenterPage />} />
+          <Route path="sync-centre" element={<SyncCenterPage />} />
+          <Route path="sync" element={<SyncCenterPage />} />
+          <Route path="synccenter" element={<SyncCenterPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
