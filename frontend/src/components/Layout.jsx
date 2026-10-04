@@ -11,7 +11,7 @@ export function Layout() {
 
   return (
     <ToastProvider>
-      <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 selection:bg-teal-500/20 selection:text-teal-300 relative overflow-hidden bg-grid-subtle">
+      <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 selection:bg-teal-500/20 selection:text-teal-300 relative overflow-x-hidden bg-grid-subtle">
         {/* Cursor-following ambient radial light */}
         <CursorGlow />
 

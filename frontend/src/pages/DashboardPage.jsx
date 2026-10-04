@@ -9,7 +9,10 @@ import {
   ArrowRight,
   AlertTriangle,
   Clock,
-  Database
+  Database,
+  CheckCircle2,
+  Circle,
+  Plus
 } from 'lucide-react';
 import { useBackendStatus } from '../hooks/useBackendStatus';
 import { ConnectionStatus } from '../components/ConnectionStatus';
@@ -18,6 +21,7 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { getLocalDatabaseStats } from '../db/devTools.js';
 import conflictRepository from '../db/repositories/conflictRepository.js';
 import outboxRepository from '../db/repositories/outboxRepository.js';
+import { taskRepository } from '../db/repositories/taskRepository.js';
 import { syncState, syncManager } from '../sync/index.js';
 import { MagneticButton } from '../components/MagneticButton';
 import { AnimatedCounter } from '../components/AnimatedCounter';
@@ -29,6 +33,7 @@ export function DashboardPage() {
   const toast = useToast();
 
   const [stats, setStats] = useState(null);
+  const [recentTasks, setRecentTasks] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [conflictCount, setConflictCount] = useState(0);
   const [engineState, setEngineState] = useState(syncState.getState());
@@ -38,6 +43,9 @@ export function DashboardPage() {
     try {
       const dbStats = await getLocalDatabaseStats();
       setStats(dbStats);
+
+      const tasks = await taskRepository.getAllTasks();
+      setRecentTasks(tasks.slice(0, 4));
 
       const pending = await outboxRepository.getPendingMutations();
       setPendingCount(pending.length);
@@ -92,10 +100,17 @@ export function DashboardPage() {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  };
+
   return (
     <div className="space-y-8 py-2 max-w-7xl mx-auto">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden rounded-3xl border border-slate-800/80 bg-gradient-to-br from-slate-900/90 via-slate-900/70 to-slate-950 p-6 sm:p-10 shadow-2xl backdrop-blur-xl transition-all">
+      {/* Hero Section (Section 31 Target Mockup) */}
+      <section className="relative overflow-hidden rounded-3xl border border-slate-800/90 bg-gradient-to-br from-slate-900/90 via-slate-900/70 to-slate-950 p-6 sm:p-10 shadow-2xl backdrop-blur-xl transition-all card-interactive">
         <div className="max-w-3xl space-y-4">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-teal-500/10 text-teal-400 border border-teal-500/20 shadow-xs">
             <Sparkles className="h-3.5 w-3.5 text-teal-300" />
@@ -104,10 +119,10 @@ export function DashboardPage() {
 
           <div className="space-y-2">
             <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white leading-tight">
-              Work anywhere. <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-300 via-emerald-400 to-teal-500">Sync when connected.</span>
+              {getGreeting()}. <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-300 via-emerald-400 to-teal-500">Your workspace is active.</span>
             </h1>
             <p className="text-sm sm:text-base text-slate-300/90 leading-relaxed font-normal">
-              Mission-critical field operations workspace designed for disconnected field environments. All inspections, checklist items, and project updates commit instantly to local IndexedDB and reconcile transparently upon reconnection.
+              Field checklists, inspections, and project notes commit instantly to local IndexedDB with atomic outbox queuing. Reconciles transparently when connected.
             </p>
           </div>
 
@@ -120,11 +135,27 @@ export function DashboardPage() {
             <MagneticButton
               onClick={handleQuickSync}
               disabled={isSyncing || !engineState.isOnline}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-slate-950 bg-teal-400 hover:bg-teal-300 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-teal-950/40 cursor-pointer"
+              className="btn-tactile inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-slate-950 bg-teal-400 hover:bg-teal-300 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-teal-950/40 cursor-pointer"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
               <span>{isSyncing ? 'Syncing...' : 'Sync Now'}</span>
             </MagneticButton>
+
+            <Link
+              to="/projects"
+              className="btn-tactile inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-800 transition-colors cursor-pointer shadow-sm"
+            >
+              <Plus className="h-3.5 w-3.5 text-teal-400" />
+              <span>New Project</span>
+            </Link>
+
+            <Link
+              to="/tasks"
+              className="btn-tactile inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-800 transition-colors cursor-pointer shadow-sm"
+            >
+              <Plus className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Add Task</span>
+            </Link>
 
             <InstallButton />
           </div>
@@ -147,8 +178,9 @@ export function DashboardPage() {
           {/* Metric 1: Projects */}
           <Link
             to="/projects"
-            className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 hover:border-emerald-500/40 hover:bg-slate-900/70 card-interactive group"
+            className="p-5 rounded-2xl border border-slate-800 bg-slate-900/50 hover:border-emerald-500/40 hover:bg-slate-900/70 card-interactive group relative overflow-hidden"
           >
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-emerald-500/40" />
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-slate-400 font-medium">Field Projects</span>
               <div className="p-2 rounded-xl bg-slate-800 text-emerald-400 group-hover:scale-110 transition-transform">
@@ -166,8 +198,9 @@ export function DashboardPage() {
           {/* Metric 2: Tasks */}
           <Link
             to="/tasks"
-            className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 hover:border-teal-500/40 hover:bg-slate-900/70 card-interactive group"
+            className="p-5 rounded-2xl border border-slate-800 bg-slate-900/50 hover:border-teal-500/40 hover:bg-slate-900/70 card-interactive group relative overflow-hidden"
           >
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-teal-500/40" />
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-slate-400 font-medium">Field Tasks</span>
               <div className="p-2 rounded-xl bg-slate-800 text-teal-400 group-hover:scale-110 transition-transform">
@@ -178,15 +211,16 @@ export function DashboardPage() {
               <AnimatedCounter value={stats?.totalTasks ?? 0} />
             </div>
             <span className="text-[11px] text-teal-400/90 font-medium mt-1 inline-flex items-center gap-1">
-              Checklists & procedures <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+              Checklists & inspections <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
             </span>
           </Link>
 
           {/* Metric 3: Pending Outbox Changes */}
           <Link
             to="/sync-center"
-            className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 hover:border-cyan-500/40 hover:bg-slate-900/70 card-interactive group"
+            className="p-5 rounded-2xl border border-slate-800 bg-slate-900/50 hover:border-cyan-500/40 hover:bg-slate-900/70 card-interactive group relative overflow-hidden"
           >
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-cyan-500/40" />
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-slate-400 font-medium">Pending Changes</span>
               <div className="p-2 rounded-xl bg-slate-800 text-cyan-400 group-hover:scale-110 transition-transform">
@@ -204,12 +238,13 @@ export function DashboardPage() {
           {/* Metric 4: Concurrency Conflicts */}
           <Link
             to="/sync-center"
-            className={`p-5 rounded-2xl border card-interactive group ${
+            className={`p-5 rounded-2xl border card-interactive group relative overflow-hidden ${
               conflictCount > 0
                 ? 'border-amber-500/60 bg-amber-950/20 hover:bg-amber-950/30'
-                : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
+                : 'border-slate-800 bg-slate-900/50 hover:border-slate-700'
             }`}
           >
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-amber-500/40" />
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-slate-400 font-medium">Version Conflicts</span>
               <div className={`p-2 rounded-xl ${conflictCount > 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'}`}>
@@ -224,6 +259,64 @@ export function DashboardPage() {
             </span>
           </Link>
         </div>
+      </section>
+
+      {/* Recent Field Inspections Section (Prompt Section 31 Mockup) */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckSquare className="h-5 w-5 text-teal-400" />
+            <h2 className="text-lg font-bold text-white tracking-tight">Recent Field Tasks</h2>
+          </div>
+          <Link
+            to="/tasks"
+            className="text-xs font-semibold text-teal-400 hover:text-teal-300 inline-flex items-center gap-1 group"
+          >
+            <span>View All Tasks</span>
+            <ArrowRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
+          </Link>
+        </div>
+
+        {recentTasks.length === 0 ? (
+          <div className="p-8 rounded-2xl border border-slate-800/80 bg-slate-900/30 text-center text-xs text-slate-500">
+            No tasks logged yet. Create a task or seed demo data to populate this list.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            {recentTasks.map((t) => (
+              <div
+                key={t.id}
+                className="p-4 rounded-2xl border border-slate-800/80 bg-slate-900/50 card-interactive flex items-center justify-between gap-3 shadow-sm"
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className={`p-1.5 rounded-lg ${t.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
+                    {t.status === 'COMPLETED' ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className={`text-xs font-bold block truncate ${t.status === 'COMPLETED' ? 'line-through text-slate-400' : 'text-white'}`}>
+                      {t.title}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Priority: {t.priority} · v{t.version}
+                    </span>
+                  </div>
+                </div>
+
+                <span
+                  className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold shrink-0 ${
+                    t.sync_status === 'SYNCED'
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                      : t.sync_status === 'CONFLICT'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      : 'bg-teal-500/10 text-teal-300 border border-teal-500/30'
+                  }`}
+                >
+                  ● {t.sync_status}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Backend API Service Health Indicator */}
