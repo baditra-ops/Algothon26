@@ -22,14 +22,18 @@ import {
 import { syncManager, syncState, SYNC_STATE, calculateFieldDiffs } from '../sync/index.js';
 import { SYNC_STATUS } from '../db/schema.js';
 import ConflictResolutionModal from '../components/ConflictResolutionModal.jsx';
+import { MagneticButton } from '../components/MagneticButton';
+import { AnimatedCounter } from '../components/AnimatedCounter';
+import { Tooltip } from '../components/Tooltip';
+import { useToast } from '../context/ToastContext';
 
 export function SyncCenterPage() {
+  const toast = useToast();
   const [stats, setStats] = useState(null);
   const [pending, setPending] = useState(null);
   const [mutations, setMutations] = useState([]);
   const [conflicts, setConflicts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [notice, setNotice] = useState('');
   const [engineState, setEngineState] = useState(syncState.getState());
   const [selectedConflict, setSelectedConflict] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -66,62 +70,59 @@ export function SyncCenterPage() {
   }, []);
 
   const handleManualSync = async () => {
-    setNotice('Triggering synchronization cycle...');
     try {
       const res = await syncManager.triggerManualSync();
       if (res?.skipped) {
-        setNotice(`Sync skipped: ${res.reason}`);
+        toast.warning('Sync Skipped', `Engine reason: ${res.reason}`);
       } else if (res?.failed) {
-        setNotice(`Sync failed: ${res.error}`);
+        toast.error('Sync Failed', res.error || 'Check backend connection');
+      } else if (res?.conflicts > 0) {
+        toast.warning('Conflict Captured', `${res.conflicts} concurrency conflict(s) stored for review`);
       } else {
-        setNotice(
-          `Sync complete: ${res.succeeded || 0} succeeded, ${res.conflicts || 0} conflicts, ${res.failed || 0} failed.`
+        toast.success(
+          'Synchronization Complete',
+          `${res.succeeded || 0} mutation(s) pushed · Local store matches cloud`
         );
       }
     } catch (err) {
-      setNotice(`Sync error: ${err.message}`);
+      toast.error('Sync Error', err.message);
     }
-    setTimeout(() => setNotice(''), 4000);
     await loadTelemetry();
   };
 
   const handleRetryMutation = async (id) => {
     await syncManager.retryMutation(id);
-    setNotice('Mutation reset to PENDING and sync requested');
-    setTimeout(() => setNotice(''), 3000);
+    toast.info('Mutation Queued', 'Reset mutation to PENDING and triggered background sync');
     await loadTelemetry();
   };
 
   const handleSeed = async () => {
     await seedDevelopmentData();
-    setNotice('Seeded sample projects & tasks into IndexedDB with outbox entries');
-    setTimeout(() => setNotice(''), 3000);
+    toast.success('Demo Data Seeded', 'Sample projects, tasks, and outbox mutations added');
     await loadTelemetry();
   };
 
   const handleClearCompleted = async () => {
     const count = await clearCompletedMutations();
-    setNotice(`Cleared ${count} completed mutation(s) from outbox`);
-    setTimeout(() => setNotice(''), 3000);
+    toast.info('Outbox Pruned', `Purged ${count} completed mutation(s) from local storage`);
     await loadTelemetry();
   };
 
   const handleClear = async () => {
     if (!window.confirm('Clear all local IndexedDB records (projects, tasks, outbox, and conflicts)?')) return;
     await clearLocalDatabase();
-    setNotice('Local IndexedDB cleared');
-    setTimeout(() => setNotice(''), 3000);
+    toast.warning('Database Cleared', 'IndexedDB tables completely wiped');
     await loadTelemetry();
   };
 
   const isSyncing = engineState.state === SYNC_STATE.SYNCING;
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto py-4">
+    <div className="space-y-8 max-w-7xl mx-auto py-2">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 mb-2">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-teal-500/10 text-teal-400 border border-teal-500/20 mb-2">
             <RotateCw className={`h-3 w-3 ${isSyncing ? 'animate-spin' : ''}`} />
             <span>Bi-Directional Offline Sync Engine</span>
           </div>
@@ -131,40 +132,37 @@ export function SyncCenterPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* Sync Now Action */}
-          <button
-            type="button"
+          <MagneticButton
             onClick={handleManualSync}
             disabled={isSyncing || !engineState.isOnline}
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer ${
               isSyncing || !engineState.isOnline
                 ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
-                : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 border border-cyan-400'
+                : 'bg-teal-400 hover:bg-teal-300 text-slate-950 border border-teal-300'
             }`}
           >
             <RotateCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
             <span>{isSyncing ? 'Synchronizing...' : 'Sync Now'}</span>
-          </button>
+          </MagneticButton>
 
           {/* Simulate Offline Mode Toggle */}
           <button
             type="button"
             onClick={() => {
               const isSim = syncState.toggleSimulationOffline();
-              setNotice(
-                isSim
-                  ? 'Simulated Offline Mode enabled. Outbox will buffer all mutations.'
-                  : 'Reconnected to network. Triggering background synchronization...'
-              );
-              if (!isSim) {
+              if (isSim) {
+                toast.warning('Simulated Offline Mode', 'Network calls paused. All changes will buffer locally in Outbox.');
+              } else {
+                toast.success('Online Restored', 'Reconnected. Triggering background synchronization...');
                 syncManager.triggerSync();
               }
             }}
             className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
               engineState.isSimulatedOffline
                 ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30'
-                : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800'
             }`}
             title="Toggle simulated offline mode to test offline behavior without touching Wi-Fi or DevTools"
           >
@@ -172,42 +170,39 @@ export function SyncCenterPage() {
             <span>{engineState.isSimulatedOffline ? 'Resume Online' : 'Simulate Offline'}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleSeed}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-amber-400" />
-            <span>Seed Demo Data</span>
-          </button>
+          <Tooltip text="Seed test records into local database">
+            <button
+              type="button"
+              onClick={handleSeed}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors cursor-pointer"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+              <span>Seed Data</span>
+            </button>
+          </Tooltip>
 
-          <button
-            type="button"
-            onClick={loadTelemetry}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition-colors cursor-pointer"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            <span>Refresh</span>
-          </button>
+          <Tooltip text="Refresh telemetry metrics from IndexedDB">
+            <button
+              type="button"
+              onClick={loadTelemetry}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 transition-colors cursor-pointer"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>Refresh</span>
+            </button>
+          </Tooltip>
         </div>
       </div>
 
-      {notice && (
-        <div className="rounded-xl border border-cyan-500/30 bg-cyan-950/40 px-4 py-2.5 text-xs text-cyan-300 animate-fade-in font-medium flex items-center justify-between">
-          <span>{notice}</span>
-          <span className="text-[10px] text-slate-500 font-mono">Telemetry updated</span>
-        </div>
-      )}
-
       {/* Sync Engine Telemetry Status Card */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
+      <div className="rounded-3xl border border-slate-800/80 bg-slate-900/60 p-6 flex flex-col md:flex-row md:items-center justify-between gap-5 card-interactive">
+        <div className="flex items-center gap-4">
           <div
-            className={`p-3 rounded-xl border ${
+            className={`p-3.5 rounded-2xl border shadow-sm ${
               !engineState.isOnline
                 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                 : isSyncing
-                ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
+                ? 'bg-teal-500/10 text-teal-400 border-teal-500/20'
                 : engineState.state === SYNC_STATE.CONFLICT
                 ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
                 : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
@@ -224,8 +219,8 @@ export function SyncCenterPage() {
             )}
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-base font-bold text-white">
+            <div className="flex items-center gap-2.5">
+              <span className="text-lg font-bold text-white tracking-tight">
                 {!engineState.isOnline
                   ? "You're Offline"
                   : isSyncing
@@ -237,11 +232,11 @@ export function SyncCenterPage() {
                   : 'Everything is Synchronized'}
               </span>
               <span
-                className={`px-2 py-0.5 rounded font-mono font-semibold text-[10px] ${
+                className={`px-2.5 py-0.5 rounded-full font-mono font-semibold text-[10px] ${
                   !engineState.isOnline
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                     : isSyncing
-                    ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 animate-pulse'
+                    ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20 animate-pulse'
                     : engineState.state === SYNC_STATE.CONFLICT
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                     : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
@@ -261,16 +256,23 @@ export function SyncCenterPage() {
                 ? `${mutations.filter((m) => m.status === 'PENDING').length} mutation(s) queued for upstream transmission.`
                 : 'Local IndexedDB store matches central Supabase PostgreSQL database.'}
               {engineState.lastSyncAt && (
-                <span className="text-slate-500 block sm:inline sm:ml-2">
+                <span className="text-slate-500 block sm:inline sm:ml-2 font-mono">
                   · Last sync: {new Date(engineState.lastSyncAt).toLocaleTimeString()}
                 </span>
               )}
             </p>
+
+            {/* Sync Progress Bar */}
+            {isSyncing && (
+              <div className="mt-3 w-full max-w-md bg-slate-950 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                <div className="h-full bg-teal-400 rounded-full animate-pulse w-3/4 transition-all duration-300" />
+              </div>
+            )}
           </div>
         </div>
 
         {engineState.lastSummary && (
-          <div className="flex items-center gap-4 text-xs font-mono text-slate-400 bg-slate-950/80 px-4 py-2.5 rounded-xl border border-slate-800">
+          <div className="flex items-center gap-4 text-xs font-mono text-slate-400 bg-slate-950/80 px-4 py-2.5 rounded-2xl border border-slate-800 shrink-0">
             <div>
               Processed: <span className="text-white font-bold">{engineState.lastSummary.processed}</span>
             </div>
@@ -289,124 +291,113 @@ export function SyncCenterPage() {
 
       {/* Persistence Overview Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-1">
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-900/40 p-5 space-y-1 card-interactive">
           <span className="text-xs text-slate-400">Total Local Projects</span>
-          <div className="text-2xl font-bold text-white">{stats?.totalProjects ?? 0}</div>
-          <span className="text-[11px] text-emerald-400">IndexedDB: projects</span>
+          <div className="text-3xl font-extrabold text-white">
+            <AnimatedCounter value={stats?.totalProjects ?? 0} />
+          </div>
+          <span className="text-[11px] text-emerald-400 font-medium">IndexedDB: projects</span>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-1">
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-900/40 p-5 space-y-1 card-interactive">
           <span className="text-xs text-slate-400">Total Local Tasks</span>
-          <div className="text-2xl font-bold text-white">{stats?.totalTasks ?? 0}</div>
-          <span className="text-[11px] text-teal-400">IndexedDB: tasks</span>
+          <div className="text-3xl font-extrabold text-white">
+            <AnimatedCounter value={stats?.totalTasks ?? 0} />
+          </div>
+          <span className="text-[11px] text-teal-400 font-medium">IndexedDB: tasks</span>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-1">
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-900/40 p-5 space-y-1 card-interactive">
           <span className="text-xs text-slate-400">Outbox Queue Buffer</span>
-          <div className="text-2xl font-bold text-cyan-300">{stats?.outbox?.total ?? 0}</div>
+          <div className="text-3xl font-extrabold text-cyan-300">
+            <AnimatedCounter value={stats?.outbox?.total ?? 0} />
+          </div>
           <span className="text-[11px] text-slate-400">
             {stats?.outbox?.pending ?? 0} Pending · {stats?.outbox?.failed ?? 0} Failed
           </span>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-1">
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-900/40 p-5 space-y-1 card-interactive">
           <span className="text-xs text-slate-400">Detected Conflicts</span>
-          <div className="text-2xl font-bold text-amber-400">
-            {conflicts.filter((c) => c.status === 'PENDING').length}
+          <div className="text-3xl font-extrabold text-amber-400">
+            <AnimatedCounter value={conflicts.filter((c) => c.status === 'PENDING').length} />
           </div>
-          <span className="text-[11px] text-amber-400/80">
+          <span className="text-[11px] text-amber-400/90 font-medium">
             {conflicts.filter((c) => c.status === 'PENDING').length > 0
-              ? `${conflicts.filter((c) => c.status === 'PENDING').length} requiring attention`
+              ? `${conflicts.filter((c) => c.status === 'PENDING').length} requiring review`
               : 'All conflicts resolved'}
           </span>
         </div>
       </div>
 
-      {/* Conflicts Requiring Attention */}
+      {/* Persistent Conflicts Management Panel */}
       {conflicts.filter((c) => c.status === 'PENDING').length > 0 && (
-        <div className="rounded-2xl border border-amber-500/40 bg-amber-950/20 p-6 space-y-4 shadow-xl">
+        <div className="rounded-3xl border border-amber-500/50 bg-amber-950/20 p-6 space-y-4 shadow-xl">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                <AlertTriangle className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-white">
-                  Conflicts Requiring Attention ({conflicts.filter((c) => c.status === 'PENDING').length})
-                </h3>
-                <span className="text-xs text-amber-300">
-                  HTTP 409 Optimistic Version Divergence Detected
-                </span>
-              </div>
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-400" />
+              <h2 className="text-base font-bold text-white">
+                Conflicts Requiring Attention ({conflicts.filter((c) => c.status === 'PENDING').length})
+              </h2>
             </div>
-            <span className="px-2.5 py-1 rounded-full text-xs font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              Needs User Decision
+            <span className="text-xs text-amber-300/80 font-mono">
+              Action needed: Keep Local · Keep Server · Custom Merge
             </span>
           </div>
-          <p className="text-xs text-slate-300 leading-relaxed">
-            These tasks were updated concurrently by another user while you worked offline. FIELDNOTE preserved both versions without overwriting any data.
-            Review each conflict to choose Keep Local, Keep Server, or Custom Merge.
-          </p>
 
           <div className="space-y-3">
             {conflicts
               .filter((c) => c.status === 'PENDING')
-              .map((c) => {
-                const diffs = calculateFieldDiffs(c.local_snapshot, c.server_snapshot);
-                const diffFields = diffs.filter((d) => d.isDifferent).map((d) => d.label);
+              .map((conflict) => {
+                const local = conflict.local_snapshot || {};
+                const server = conflict.server_snapshot || {};
+                const diffs = calculateFieldDiffs(local, server);
+                const differing = diffs.filter((d) => d.isDifferent);
 
                 return (
                   <div
-                    key={c.id}
-                    className="rounded-xl border border-amber-500/30 bg-slate-950 p-4 space-y-3"
+                    key={conflict.id}
+                    className="rounded-2xl border border-amber-500/40 bg-slate-950/80 p-4 space-y-3"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="space-y-1">
+                      <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-white text-sm">
-                            {c.local_snapshot?.title || c.server_snapshot?.title || 'Untitled Task'}
+                          <span className="text-sm font-bold text-white">
+                            {local.title || server.title || 'Untitled Task'}
                           </span>
-                          <span className="px-2 py-0.5 rounded font-mono font-semibold text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20">
-                            {c.status}
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30">
+                            Version Conflict (v{conflict.base_version} vs v{conflict.server_version})
                           </span>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 font-mono">
-                          <span>Entity: {c.entity_id.slice(0, 8)}...</span>
-                          <span>·</span>
-                          <span className="text-cyan-400">Local Base: v{c.base_version ?? 0}</span>
-                          <span>·</span>
-                          <span className="text-emerald-400">Server: v{c.server_version ?? 1}</span>
-                        </div>
+                        <p className="text-xs text-slate-400">
+                          {differing.length} field(s) diverged between your offline edits and the cloud server.
+                        </p>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => {
-                          setSelectedConflict(c);
+                          setSelectedConflict(conflict);
                           setIsModalOpen(true);
                         }}
-                        className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-500 hover:bg-amber-400 transition-colors shadow-lg shadow-amber-500/20 cursor-pointer shrink-0"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-amber-500 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20 cursor-pointer shrink-0"
                       >
-                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTriangle className="h-3.5 w-3.5" />
                         <span>Review & Resolve Conflict</span>
                       </button>
                     </div>
 
-                    {diffFields.length > 0 && (
-                      <div className="pt-2 border-t border-slate-900 flex items-center gap-2 text-xs">
-                        <span className="text-slate-500 font-medium">Conflicting Fields:</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {diffFields.map((f) => (
-                            <span
-                              key={f}
-                              className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-950/60 text-amber-300 border border-amber-900/50"
-                            >
-                              {f}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    {/* Summary diff chips */}
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {differing.map((d) => (
+                        <span
+                          key={d.field}
+                          className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-slate-900 border border-amber-500/30 text-amber-200"
+                        >
+                          {d.label}: Local "{String(d.localVal)}" ≠ Server "{String(d.serverVal)}"
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 );
               })}
@@ -414,128 +405,61 @@ export function SyncCenterPage() {
         </div>
       )}
 
-      {/* Resolved Conflicts History (Collapsible) */}
-      {conflicts.filter((c) => c.status === 'RESOLVED').length > 0 && (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 space-y-2">
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setShowResolvedHistory(!showResolvedHistory)}
-              className="text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center gap-1.5 cursor-pointer"
-            >
-              <span>{showResolvedHistory ? '▼' : '▶'}</span>
-              <span>Resolved Conflicts History ({conflicts.filter((c) => c.status === 'RESOLVED').length})</span>
-            </button>
-            <span className="text-[11px] text-slate-500 font-mono">Audit Log</span>
-          </div>
-
-          {showResolvedHistory && (
-            <div className="space-y-2 pt-2">
-              {conflicts
-                .filter((c) => c.status === 'RESOLVED')
-                .map((rc) => (
-                  <div
-                    key={rc.id}
-                    className="p-3 rounded-lg bg-slate-950 border border-slate-850 text-xs flex items-center justify-between"
-                  >
-                    <div>
-                      <span className="font-semibold text-slate-300">
-                        {rc.local_snapshot?.title || rc.server_snapshot?.title || 'Task'}
-                      </span>
-                      <span className="text-slate-500 ml-2 font-mono">
-                        v{rc.base_version} → v{rc.server_version}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                        {rc.resolution}
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        {new Date(rc.resolved_at || rc.updated_at).toLocaleTimeString()}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Outbox Mutation Queue Inspector */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
+      {/* Outbox Queue Section */}
+      <div className="rounded-3xl border border-slate-800/80 bg-slate-900/40 p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-white flex items-center gap-2">
-            <ListOrdered className="h-4 w-4 text-cyan-400" />
-            <span>Outbox Mutation Queue ({mutations.length})</span>
-          </h3>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleClearCompleted}
-              disabled={!(stats?.outbox?.completed > 0)}
-              className="text-xs text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:hover:text-slate-400 cursor-pointer"
-            >
-              Clear Completed
-            </button>
-            <span className="text-xs font-mono text-slate-400">IndexedDB: outbox</span>
+          <div className="flex items-center gap-2">
+            <ListOrdered className="h-5 w-5 text-teal-400" />
+            <h3 className="text-base font-bold text-white">Mutation Outbox Queue Buffer</h3>
+            <span className="text-xs text-slate-500 font-mono">({mutations.length} records)</span>
           </div>
+
+          <button
+            onClick={handleClearCompleted}
+            className="text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
+          >
+            Clear Completed
+          </button>
         </div>
 
         {loading ? (
-          <div className="text-xs text-slate-400">Loading outbox mutations...</div>
+          <div className="text-xs text-slate-400 py-4 text-center">Loading mutations...</div>
         ) : mutations.length === 0 ? (
-          <div className="text-xs text-slate-500 py-4 text-center">
-            Outbox queue is empty. Create, edit, or delete projects and tasks to inspect atomic mutations.
+          <div className="text-xs text-slate-500 py-8 text-center bg-slate-950/40 rounded-2xl border border-slate-800/50">
+            Outbox queue is empty. Create or edit projects and tasks to see mutations queued for sync.
           </div>
         ) : (
-          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+          <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
             {mutations.map((m) => (
               <div
                 key={m.id}
-                className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-white uppercase tracking-wider text-[11px]">
-                      [{m.entity_type}]
-                    </span>
-                    <span
-                      className={`px-2 py-0.5 rounded font-mono font-semibold text-[10px] ${
-                        m.operation === 'CREATE'
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : m.operation === 'UPDATE'
-                          ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                          : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                      }`}
-                    >
-                      {m.operation}
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-mono">
-                      Target: {m.entity_id.slice(0, 8)}...
-                    </span>
-                    {m.base_version !== null && (
-                      <span className="text-[10px] text-cyan-400 font-mono">
-                        base_v{m.base_version}
-                      </span>
-                    )}
+                    <span className="font-mono font-bold text-white uppercase">{m.operation}</span>
+                    <span className="font-mono text-slate-400">[{m.entity_type}]</span>
+                    <span className="text-slate-500 font-mono text-[10px]">ID: {m.id.slice(0, 8)}...</span>
                   </div>
-                  <div className="text-[11px] text-slate-500 font-mono truncate max-w-md">
-                    IdempotencyKey: {m.idempotency_key.slice(0, 16)}... · Attempts: {m.attempt_count}
-                    {m.last_error && <span className="text-rose-400 ml-2">({m.last_error})</span>}
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    Target: {m.entity_id.slice(0, 8)}... | Attempts: {m.attempt_count}
+                    {m.base_version !== null && m.base_version !== undefined && ` | Base v${m.base_version}`}
+                    {m.last_error && <span className="text-rose-400 ml-2">Error: {m.last_error}</span>}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 self-end sm:self-center">
                   <span
-                    className={`px-2 py-0.5 rounded font-mono font-semibold text-[10px] ${
-                      m.status === 'PENDING'
-                        ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20'
+                    className={`px-2.5 py-0.5 rounded-full font-mono font-semibold text-[10px] ${
+                      m.status === 'COMPLETED'
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                         : m.status === 'PROCESSING'
-                        ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
-                        : m.status === 'COMPLETED'
-                        ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+                        ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20 animate-pulse'
                         : m.status === 'CONFLICT'
-                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                        : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        : m.status === 'FAILED'
+                        ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
                     }`}
                   >
                     {m.status}
@@ -544,7 +468,7 @@ export function SyncCenterPage() {
                   {m.status === 'FAILED' && (
                     <button
                       onClick={() => handleRetryMutation(m.id)}
-                      className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
+                      className="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-rose-950 text-rose-300 border border-rose-800 hover:bg-rose-900 transition-colors"
                     >
                       Retry
                     </button>
@@ -556,8 +480,58 @@ export function SyncCenterPage() {
         )}
       </div>
 
-      {/* Pending Sync Records Inspector */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
+      {/* Resolved Conflicts History Audit Log */}
+      <div className="rounded-3xl border border-slate-800/80 bg-slate-900/40 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+            <h3 className="text-base font-bold text-white">Resolved Conflicts Audit Log</h3>
+            <span className="text-xs text-slate-500 font-mono">
+              ({conflicts.filter((c) => c.status === 'RESOLVED').length} resolved)
+            </span>
+          </div>
+
+          <button
+            onClick={() => setShowResolvedHistory(!showResolvedHistory)}
+            className="text-xs text-teal-400 hover:text-teal-300 font-semibold transition-colors cursor-pointer"
+          >
+            {showResolvedHistory ? 'Hide History' : 'View Audit History'}
+          </button>
+        </div>
+
+        {showResolvedHistory && (
+          <div className="space-y-2 pt-2">
+            {conflicts.filter((c) => c.status === 'RESOLVED').length === 0 ? (
+              <div className="text-xs text-slate-500 py-4 text-center">No resolved conflict history recorded.</div>
+            ) : (
+              conflicts
+                .filter((c) => c.status === 'RESOLVED')
+                .map((rc) => (
+                  <div
+                    key={rc.id}
+                    className="rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs flex items-center justify-between"
+                  >
+                    <div>
+                      <span className="font-semibold text-white">
+                        {rc.local_snapshot?.title || rc.server_snapshot?.title || 'Task'}
+                      </span>
+                      <span className="text-[11px] text-slate-500 ml-2 font-mono">
+                        Resolved via <strong>{rc.resolution}</strong> on{' '}
+                        {new Date(rc.resolved_at || rc.updated_at).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full font-mono text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      RESOLVED
+                    </span>
+                  </div>
+                ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Local Entity Sync Metadata Breakdown */}
+      <div className="rounded-3xl border border-slate-800/80 bg-slate-900/40 p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-bold text-white flex items-center gap-2">
             <Clock className="h-4 w-4 text-amber-400" />
@@ -567,9 +541,9 @@ export function SyncCenterPage() {
         </div>
 
         {loading ? (
-          <div className="text-xs text-slate-400">Loading telemetry...</div>
+          <div className="text-xs text-slate-400 py-4">Loading telemetry...</div>
         ) : pending?.totalPending === 0 ? (
-          <div className="text-xs text-slate-500 py-4 text-center">
+          <div className="text-xs text-slate-500 py-6 text-center bg-slate-950/40 rounded-2xl border border-slate-800/50">
             No pending records. Seed demo data or create projects/tasks to inspect local sync metadata.
           </div>
         ) : (
@@ -577,13 +551,13 @@ export function SyncCenterPage() {
             {pending?.projects.map((p) => (
               <div
                 key={p.id}
-                className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs flex items-center justify-between"
+                className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs flex items-center justify-between"
               >
                 <div>
                   <span className="font-semibold text-white">[Project] {p.name}</span>
                   <span className="text-[11px] text-slate-500 ml-2 font-mono">ID: {p.id.slice(0, 8)}...</span>
                 </div>
-                <span className="px-2 py-0.5 rounded font-mono font-semibold text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                <span className="px-2 py-0.5 rounded-full font-mono font-semibold text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20">
                   {p.sync_status}
                 </span>
               </div>
@@ -592,7 +566,7 @@ export function SyncCenterPage() {
             {pending?.tasks.map((t) => (
               <div
                 key={t.id}
-                className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs flex items-center justify-between"
+                className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs flex items-center justify-between"
               >
                 <div>
                   <span className="font-semibold text-white">[Task] {t.title}</span>
@@ -601,7 +575,7 @@ export function SyncCenterPage() {
                   </span>
                 </div>
                 <span
-                  className={`px-2 py-0.5 rounded font-mono font-semibold text-[10px] ${
+                  className={`px-2 py-0.5 rounded-full font-mono font-semibold text-[10px] ${
                     t.sync_status === SYNC_STATUS.CONFLICT
                       ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
                       : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
@@ -635,8 +609,7 @@ export function SyncCenterPage() {
           setSelectedConflict(null);
         }}
         onResolved={(strategy) => {
-          setNotice(`Conflict resolved using ${strategy}. Synchronization updated.`);
-          setTimeout(() => setNotice(''), 4000);
+          toast.success('Conflict Resolved', `Resolved using strategy: ${strategy}`);
           loadTelemetry();
         }}
       />
@@ -644,4 +617,4 @@ export function SyncCenterPage() {
   );
 }
 
-
+export default SyncCenterPage;

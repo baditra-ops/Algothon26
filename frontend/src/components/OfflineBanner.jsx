@@ -21,8 +21,8 @@ export function OfflineBanner() {
             <strong>Offline Mode Active:</strong> Running from cached application shell. Server communication is temporarily paused.
           </span>
         </div>
-        <span className="hidden sm:inline text-[11px] text-amber-400/80 bg-amber-900/60 px-2 py-0.5 rounded border border-amber-700/60">
-          Prompt 3: App Shell Cached
+        <span className="hidden sm:inline text-[11px] font-medium text-amber-400/90 bg-amber-900/40 px-2.5 py-0.5 rounded-full border border-amber-700/50">
+          Local Persistence Active
         </span>
       </div>
     </div>

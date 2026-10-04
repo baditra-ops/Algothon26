@@ -23,27 +23,29 @@ export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-slate-800 bg-slate-950/80 backdrop-blur-md">
+    <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Brand Logo & Name */}
           <div className="flex items-center gap-8">
-            <NavLink to="/" className="flex items-center gap-3 group">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 text-slate-950 shadow-md shadow-emerald-950/40 group-hover:scale-105 transition-transform duration-200">
-                <Compass className="h-5 w-5 stroke-[2.5]" />
+            <NavLink to="/" className="flex items-center gap-3 group focus:outline-none">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 via-emerald-500 to-teal-700 text-slate-950 shadow-md shadow-emerald-950/40 group-hover:scale-105 group-hover:shadow-teal-500/20 transition-all duration-300">
+                <Compass className="h-5 w-5 stroke-[2.5] group-hover:rotate-45 transition-transform duration-500" />
               </div>
               <div>
-                <span className="text-lg font-bold tracking-tight text-white group-hover:text-emerald-400 transition-colors">
-                  FIELDNOTE
-                </span>
-                <span className="hidden sm:inline-block ml-2 text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                  Workspace
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-bold tracking-tight text-white group-hover:text-teal-400 transition-colors">
+                    FIELDNOTE
+                  </span>
+                  <span className="hidden sm:inline-block text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-slate-900 text-teal-400/90 border border-teal-500/30 shadow-xs">
+                    Workspace
+                  </span>
+                </div>
               </div>
             </NavLink>
 
             {/* Desktop Navigation Links */}
-            <nav className="hidden md:flex items-center space-x-1">
+            <nav className="hidden md:flex items-center space-x-1.5" aria-label="Main Navigation">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -52,15 +54,29 @@ export function Navbar() {
                     to={item.path}
                     end={item.path === '/'}
                     className={({ isActive }) =>
-                      `flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-all ${
+                      `relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium transition-all duration-200 group ${
                         isActive
-                          ? 'bg-slate-800/90 text-emerald-400 shadow-sm border border-slate-700/60'
-                          : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+                          ? 'bg-slate-900/90 text-teal-300 shadow-sm border border-teal-500/30 font-semibold'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-900/50 hover:translate-x-0.5'
                       }`
                     }
                   >
-                    <Icon className="h-4 w-4" />
-                    <span>{item.name}</span>
+                    {({ isActive }) => (
+                      <>
+                        <Icon
+                          className={`h-4 w-4 transition-transform duration-200 group-hover:scale-110 ${
+                            isActive ? 'text-teal-400' : 'text-slate-400 group-hover:text-slate-200'
+                          }`}
+                        />
+                        <span>{item.name}</span>
+                        {isActive && (
+                          <span
+                            className="absolute -bottom-[17px] left-1/2 -translate-x-1/2 w-6 h-0.5 bg-teal-400 rounded-full shadow-sm shadow-teal-400/50"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </>
+                    )}
                   </NavLink>
                 );
               })}
@@ -76,7 +92,7 @@ export function Navbar() {
             <button
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden inline-flex items-center justify-center p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 focus:outline-none"
+              className="md:hidden inline-flex items-center justify-center p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-900 focus:outline-none transition-colors"
               aria-label="Toggle navigation menu"
             >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -87,7 +103,7 @@ export function Navbar() {
 
       {/* Mobile navigation menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-b border-slate-800 bg-slate-950/95 px-4 pt-2 pb-4 space-y-1">
+        <div className="md:hidden border-b border-slate-800 bg-slate-950/95 backdrop-blur-xl px-4 pt-2 pb-4 space-y-1 animate-page-enter">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
@@ -97,9 +113,9 @@ export function Navbar() {
                 end={item.path === '/'}
                 onClick={() => setMobileMenuOpen(false)}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                     isActive
-                      ? 'bg-slate-800 text-emerald-400'
+                      ? 'bg-slate-800/90 text-teal-300 font-semibold border border-teal-500/20'
                       : 'text-slate-300 hover:text-white hover:bg-slate-900'
                   }`
                 }
@@ -114,3 +130,5 @@ export function Navbar() {
     </header>
   );
 }
+
+export default Navbar;

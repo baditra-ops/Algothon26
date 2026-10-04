@@ -17,8 +17,13 @@ import { projectRepository } from '../db/repositories/projectRepository';
 import conflictRepository from '../db/repositories/conflictRepository';
 import ConflictResolutionModal from '../components/ConflictResolutionModal';
 import { TASK_STATUS, TASK_PRIORITY } from '../db/schema';
+import { MagneticButton } from '../components/MagneticButton';
+import { Tooltip } from '../components/Tooltip';
+import { SkeletonCard } from '../components/Skeleton';
+import { useToast } from '../context/ToastContext';
 
 export function TasksPage() {
+  const toast = useToast();
   const [searchParams] = useSearchParams();
   const initialProject = searchParams.get('project') || 'ALL';
 
@@ -27,7 +32,6 @@ export function TasksPage() {
   const [selectedProjectId, setSelectedProjectId] = useState(initialProject);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [loading, setLoading] = useState(true);
-  const [actionNotice, setActionNotice] = useState('');
 
   // Create form state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -94,15 +98,14 @@ export function TasksPage() {
         due_date: dueDate || null
       });
 
+      toast.success('Task Created', `"${title}" saved to local IndexedDB (PENDING_CREATE)`);
       setTitle('');
       setDescription('');
       setDueDate('');
       setShowCreateModal(false);
-      setActionNotice('Task saved to IndexedDB (version = 0, PENDING_CREATE)');
-      setTimeout(() => setActionNotice(''), 3000);
       await loadData();
     } catch (err) {
-      alert(`Error creating task: ${err.message}`);
+      toast.error('Error Creating Task', err.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -131,12 +134,11 @@ export function TasksPage() {
         due_date: editDueDate || null
       });
 
+      toast.success('Task Updated', `"${editTitle}" updated in local IndexedDB (PENDING_UPDATE)`);
       setEditingTask(null);
-      setActionNotice('Task updated in IndexedDB (PENDING_UPDATE)');
-      setTimeout(() => setActionNotice(''), 3000);
       await loadData();
     } catch (err) {
-      alert(`Error updating task: ${err.message}`);
+      toast.error('Error Updating Task', err.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -152,23 +154,21 @@ export function TasksPage() {
 
     try {
       await taskRepository.updateTask(task.id, { status: nextStatus });
-      setActionNotice(`Status updated to ${nextStatus} in IndexedDB`);
-      setTimeout(() => setActionNotice(''), 3000);
+      toast.info('Status Updated', `Task moved to ${nextStatus}`);
       await loadData();
     } catch (err) {
-      alert(`Error updating task: ${err.message}`);
+      toast.error('Error Updating Status', err.message);
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this task locally?')) return;
+  const handleDelete = async (id, taskTitle) => {
+    if (!window.confirm(`Delete task "${taskTitle || id}" locally?`)) return;
     try {
       await taskRepository.deleteTask(id);
-      setActionNotice('Task removed from active local store');
-      setTimeout(() => setActionNotice(''), 3000);
+      toast.info('Task Deleted', 'Removed from local active store and queued for deletion');
       await loadData();
     } catch (err) {
-      alert(`Error deleting task: ${err.message}`);
+      toast.error('Error Deleting Task', err.message);
     }
   };
 
@@ -179,10 +179,10 @@ export function TasksPage() {
         setSelectedConflict(conflict);
         setIsConflictModalOpen(true);
       } else {
-        alert('No active conflict record found for this task in IndexedDB.');
+        toast.warning('Conflict Not Found', 'No pending conflict record found for this task in IndexedDB.');
       }
     } catch (err) {
-      alert(`Error loading conflict: ${err.message}`);
+      toast.error('Error Loading Conflict', err.message);
     }
   };
 
@@ -222,66 +222,54 @@ export function TasksPage() {
             ))}
           </select>
 
-          <button
-            type="button"
+          <MagneticButton
             onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white shadow-lg shadow-teal-950/40 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-teal-500 hover:bg-teal-400 text-slate-950 shadow-lg shadow-teal-950/40 transition-colors cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             <span>Add Task</span>
-          </button>
+          </MagneticButton>
         </div>
       </div>
-
-      {/* Action Notice Banner */}
-      {actionNotice && (
-        <div className="rounded-xl border border-teal-500/30 bg-teal-950/40 px-4 py-2.5 text-xs text-teal-300 flex items-center justify-between animate-fade-in">
-          <span className="flex items-center gap-2 font-medium">
-            <span className="h-2 w-2 rounded-full bg-teal-400 animate-pulse"></span>
-            {actionNotice}
-          </span>
-          <span className="text-[11px] text-slate-400 font-mono">IndexedDB: fieldnote_db</span>
-        </div>
-      )}
 
       {/* Status Filter Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-800 pb-3 overflow-x-auto text-xs font-medium">
         <button
           onClick={() => setStatusFilter('ALL')}
-          className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+          className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
             statusFilter === 'ALL'
-              ? 'bg-slate-800 text-teal-300 font-bold border border-slate-700'
-              : 'text-slate-400 hover:text-slate-200'
+              ? 'bg-slate-900 text-teal-300 font-bold border border-teal-500/30 shadow-xs'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
           }`}
         >
           All Tasks ({tasks.length})
         </button>
         <button
           onClick={() => setStatusFilter(TASK_STATUS.TODO)}
-          className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+          className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
             statusFilter === TASK_STATUS.TODO
-              ? 'bg-slate-800 text-teal-300 font-bold border border-slate-700'
-              : 'text-slate-400 hover:text-slate-200'
+              ? 'bg-slate-900 text-teal-300 font-bold border border-teal-500/30 shadow-xs'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
           }`}
         >
           To Do ({tasks.filter((t) => t.status === TASK_STATUS.TODO).length})
         </button>
         <button
           onClick={() => setStatusFilter(TASK_STATUS.IN_PROGRESS)}
-          className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+          className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
             statusFilter === TASK_STATUS.IN_PROGRESS
-              ? 'bg-slate-800 text-teal-300 font-bold border border-slate-700'
-              : 'text-slate-400 hover:text-slate-200'
+              ? 'bg-slate-900 text-teal-300 font-bold border border-teal-500/30 shadow-xs'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
           }`}
         >
           In Progress ({tasks.filter((t) => t.status === TASK_STATUS.IN_PROGRESS).length})
         </button>
         <button
           onClick={() => setStatusFilter(TASK_STATUS.COMPLETED)}
-          className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+          className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
             statusFilter === TASK_STATUS.COMPLETED
-              ? 'bg-slate-800 text-teal-300 font-bold border border-slate-700'
-              : 'text-slate-400 hover:text-slate-200'
+              ? 'bg-slate-900 text-teal-300 font-bold border border-teal-500/30 shadow-xs'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
           }`}
         >
           Completed ({tasks.filter((t) => t.status === TASK_STATUS.COMPLETED).length})
@@ -290,7 +278,7 @@ export function TasksPage() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-6 shadow-2xl backdrop-blur-md space-y-4">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/95 p-6 shadow-2xl backdrop-blur-xl space-y-4 animate-modal-pop">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <CheckSquare className="h-5 w-5 text-teal-400" />
@@ -298,7 +286,7 @@ export function TasksPage() {
             </h3>
             <button
               onClick={() => setShowCreateModal(false)}
-              className="text-xs text-slate-400 hover:text-white"
+              className="text-xs text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
             >
               <X className="h-4 w-4" />
             </button>
@@ -313,7 +301,7 @@ export function TasksPage() {
                 <select
                   value={projectId}
                   onChange={(e) => setProjectId(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-sm text-white focus:outline-none focus:border-teal-500"
                   required
                 >
                   {projects.map((p) => (
@@ -329,7 +317,7 @@ export function TasksPage() {
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-sm text-white focus:outline-none focus:border-teal-500"
                 >
                   <option value={TASK_PRIORITY.LOW}>LOW</option>
                   <option value={TASK_PRIORITY.MEDIUM}>MEDIUM</option>
@@ -347,7 +335,7 @@ export function TasksPage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Inspect hydraulic pressure levels on Valve 4"
-                className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
                 required
               />
             </div>
@@ -359,17 +347,17 @@ export function TasksPage() {
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Observation details, inspection steps, or equipment checklist..."
                 rows={2}
-                className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Initial Status</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Status</label>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-sm text-white focus:outline-none focus:border-teal-500"
                 >
                   <option value={TASK_STATUS.TODO}>TODO</option>
                   <option value={TASK_STATUS.IN_PROGRESS}>IN_PROGRESS</option>
@@ -383,7 +371,7 @@ export function TasksPage() {
                   type="date"
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-sm text-white focus:outline-none focus:border-teal-500"
                 />
               </div>
             </div>
@@ -393,16 +381,16 @@ export function TasksPage() {
                 type="button"
                 onClick={() => setShowCreateModal(false)}
                 disabled={isSubmitting}
-                className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-5 py-2 rounded-lg text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white transition-colors cursor-pointer"
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-teal-500 hover:bg-teal-400 text-slate-950 transition-colors cursor-pointer"
               >
-                {isSubmitting ? 'Saving...' : 'Save Task to IndexedDB'}
+                {isSubmitting ? 'Saving...' : 'Save to IndexedDB'}
               </button>
             </div>
           </form>
@@ -411,7 +399,7 @@ export function TasksPage() {
 
       {/* Edit Modal */}
       {editingTask && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-6 shadow-2xl backdrop-blur-md space-y-4">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/95 p-6 shadow-2xl backdrop-blur-xl space-y-4 animate-modal-pop">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <Edit2 className="h-5 w-5 text-teal-400" />
@@ -419,7 +407,7 @@ export function TasksPage() {
             </h3>
             <button
               onClick={() => setEditingTask(null)}
-              className="text-xs text-slate-400 hover:text-white"
+              className="text-xs text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
             >
               <X className="h-4 w-4" />
             </button>
@@ -434,7 +422,7 @@ export function TasksPage() {
                 type="text"
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-teal-500"
+                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
                 required
               />
             </div>
@@ -445,7 +433,7 @@ export function TasksPage() {
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
                 rows={2}
-                className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-teal-500"
+                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
               />
             </div>
 
@@ -455,7 +443,7 @@ export function TasksPage() {
                 <select
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-sm text-white focus:outline-none focus:border-teal-500"
                 >
                   <option value={TASK_STATUS.TODO}>TODO</option>
                   <option value={TASK_STATUS.IN_PROGRESS}>IN_PROGRESS</option>
@@ -468,7 +456,7 @@ export function TasksPage() {
                 <select
                   value={editPriority}
                   onChange={(e) => setEditPriority(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-sm text-white focus:outline-none focus:border-teal-500"
                 >
                   <option value={TASK_PRIORITY.LOW}>LOW</option>
                   <option value={TASK_PRIORITY.MEDIUM}>MEDIUM</option>
@@ -482,7 +470,7 @@ export function TasksPage() {
                   type="date"
                   value={editDueDate}
                   onChange={(e) => setEditDueDate(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-teal-500"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700/80 text-sm text-white focus:outline-none focus:border-teal-500"
                 />
               </div>
             </div>
@@ -492,14 +480,14 @@ export function TasksPage() {
                 type="button"
                 onClick={() => setEditingTask(null)}
                 disabled={isSubmitting}
-                className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-5 py-2 rounded-lg text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white transition-colors cursor-pointer"
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-teal-500 hover:bg-teal-400 text-slate-950 transition-colors cursor-pointer"
               >
                 {isSubmitting ? 'Updating...' : 'Update Task'}
               </button>
@@ -510,65 +498,78 @@ export function TasksPage() {
 
       {/* Task List */}
       {loading ? (
-        <div className="text-center py-12 text-sm text-slate-400">Loading local tasks...</div>
+        <div className="space-y-3">
+          <SkeletonCard lines={2} />
+          <SkeletonCard lines={2} />
+          <SkeletonCard lines={2} />
+        </div>
       ) : displayedTasks.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-800 p-12 text-center space-y-4">
-          <div className="inline-flex p-3 rounded-2xl bg-slate-900 text-slate-500">
-            <CheckSquare className="h-8 w-8" />
+        <div className="rounded-3xl border border-dashed border-slate-800/90 p-12 text-center space-y-4 bg-slate-950/40">
+          <div className="inline-flex p-3 rounded-2xl bg-slate-900 border border-slate-800 text-slate-500">
+            <CheckSquare className="h-8 w-8 text-teal-400/60" />
           </div>
           <div className="space-y-1">
             <h3 className="text-base font-semibold text-white">No tasks in this view</h3>
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              Add a checklist item to start recording field observations. Changes persist locally and queue in the outbox.
+              Add a checklist task to start recording field observations. Changes persist directly in local IndexedDB.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white shadow-lg transition-colors cursor-pointer"
-          >
-            Create First Task
-          </button>
+          <div className="pt-2">
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-4 py-2 rounded-xl text-xs font-semibold bg-teal-500 hover:bg-teal-400 text-slate-950 shadow-md transition-colors cursor-pointer"
+            >
+              Add First Task
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-3">
           {displayedTasks.map((task) => {
             const project = projects.find((p) => p.id === task.project_id);
+            const isCompleted = task.status === TASK_STATUS.COMPLETED;
 
             return (
               <div
                 key={task.id}
-                className={`rounded-2xl border bg-slate-900/40 p-4 sm:p-5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                className={`rounded-2xl border bg-slate-900/40 p-4 sm:p-5 card-interactive flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
                   task.sync_status === 'CONFLICT'
                     ? 'border-amber-500/50 bg-amber-950/15'
-                    : 'border-slate-800 hover:border-slate-700'
+                    : 'border-slate-800/80 hover:border-slate-700'
                 }`}
               >
                 <div className="flex items-start gap-3.5 flex-1 min-w-0">
-                  <button
-                    onClick={() => handleToggleStatus(task)}
-                    className="mt-0.5 p-1 rounded-md text-slate-400 hover:text-white transition-colors cursor-pointer"
-                    title={`Click to advance status (${task.status})`}
-                  >
-                    {task.status === TASK_STATUS.COMPLETED ? (
-                      <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-                    ) : task.status === TASK_STATUS.IN_PROGRESS ? (
-                      <Clock className="h-5 w-5 text-amber-400" />
-                    ) : (
-                      <Circle className="h-5 w-5 text-slate-500" />
-                    )}
-                  </button>
+                  <Tooltip text={`Advance status (${task.status} → ${task.status === TASK_STATUS.TODO ? 'IN_PROGRESS' : task.status === TASK_STATUS.IN_PROGRESS ? 'COMPLETED' : 'TODO'})`}>
+                    <button
+                      onClick={() => handleToggleStatus(task)}
+                      className="mt-0.5 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                    >
+                      {isCompleted ? (
+                        <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                      ) : task.status === TASK_STATUS.IN_PROGRESS ? (
+                        <Clock className="h-5 w-5 text-amber-400" />
+                      ) : (
+                        <Circle className="h-5 w-5 text-slate-500" />
+                      )}
+                    </button>
+                  </Tooltip>
 
                   <div className="space-y-1 min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-white">{task.title}</span>
+                      <span
+                        className={`text-sm font-semibold transition-all ${
+                          isCompleted ? 'line-through text-slate-400' : 'text-white'
+                        }`}
+                      >
+                        {task.title}
+                      </span>
                       {project && (
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-950 text-slate-400 border border-slate-800">
                           {project.name}
                         </span>
                       )}
                       {task.due_date && (
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800 flex items-center gap-1 font-mono">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-950 text-slate-400 border border-slate-800 flex items-center gap-1 font-mono">
                           <Calendar className="h-3 w-3" />
                           <span>{new Date(task.due_date).toLocaleDateString()}</span>
                         </span>
@@ -586,7 +587,7 @@ export function TasksPage() {
                     <button
                       type="button"
                       onClick={() => handleOpenConflict(task.id)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold text-white bg-amber-500 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20 cursor-pointer animate-pulse"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold text-white bg-amber-500 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20 cursor-pointer animate-pulse"
                     >
                       <AlertTriangle className="h-3.5 w-3.5" />
                       <span>Resolve Conflict</span>
@@ -594,50 +595,61 @@ export function TasksPage() {
                   )}
 
                   <span
-                    className={`text-[10px] font-semibold px-2 py-0.5 rounded font-mono ${
+                    className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full font-mono ${
                       task.priority === TASK_PRIORITY.HIGH
-                        ? 'bg-rose-500/10 text-rose-300 border border-rose-500/20'
+                        ? 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
                         : task.priority === TASK_PRIORITY.MEDIUM
-                        ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
-                        : 'bg-slate-800 text-slate-400 border border-slate-700'
+                        ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+                        : 'bg-slate-800/80 text-slate-400 border border-slate-700'
                     }`}
                   >
                     {task.priority}
                   </span>
 
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800" title="Version metadata for concurrency">
+                  <span
+                    className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-950 text-slate-400 border border-slate-800"
+                    title="Concurrency version"
+                  >
                     v{task.version} {task.version === 0 ? '(Local)' : '(Server)'}
                   </span>
 
                   <span
-                    className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold ${
+                    className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full font-semibold ${
                       task.sync_status === 'SYNCED'
                         ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
                         : task.sync_status === 'PENDING_CREATE'
                         ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
                         : task.sync_status === 'CONFLICT'
                         ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                        : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/30'
+                        : 'bg-teal-500/10 text-teal-300 border border-teal-500/30'
                     }`}
                   >
-                    ● {task.sync_status}
+                    {task.sync_status === 'SYNCED'
+                      ? '● Synced'
+                      : task.sync_status === 'PENDING_CREATE'
+                      ? '● Pending create'
+                      : task.sync_status === 'CONFLICT'
+                      ? '⚠ Conflict'
+                      : '● Pending sync'}
                   </span>
 
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleStartEdit(task)}
-                      className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                      title="Edit task"
-                    >
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(task.id)}
-                      className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 transition-colors cursor-pointer"
-                      title="Delete local task"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                  <div className="flex items-center gap-1 pl-1 border-l border-slate-800">
+                    <Tooltip text="Edit task">
+                      <button
+                        onClick={() => handleStartEdit(task)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip text="Delete task locally">
+                      <button
+                        onClick={() => handleDelete(task.id, task.title)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
               </div>
@@ -655,8 +667,7 @@ export function TasksPage() {
           setSelectedConflict(null);
         }}
         onResolved={(strategy) => {
-          setActionNotice(`Conflict resolved using ${strategy}.`);
-          setTimeout(() => setActionNotice(''), 3000);
+          toast.success('Conflict Resolved', `Resolved using strategy: ${strategy}`);
           loadData();
         }}
       />

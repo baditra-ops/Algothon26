@@ -45,7 +45,7 @@ export function InstallButton() {
     <button
       type="button"
       onClick={handleInstallClick}
-      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all duration-200 cursor-pointer"
+      className="btn-tactile inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all duration-200 cursor-pointer"
       title="Install FIELDNOTE as a standalone desktop/mobile app"
     >
       <Download className="h-3.5 w-3.5" />

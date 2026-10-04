@@ -19,17 +19,20 @@ import { getLocalDatabaseStats } from '../db/devTools.js';
 import conflictRepository from '../db/repositories/conflictRepository.js';
 import outboxRepository from '../db/repositories/outboxRepository.js';
 import { syncState, syncManager } from '../sync/index.js';
+import { MagneticButton } from '../components/MagneticButton';
+import { AnimatedCounter } from '../components/AnimatedCounter';
+import { useToast } from '../context/ToastContext';
 
 export function DashboardPage() {
-  const { status: backendStatus, data: backendData, error: backendError, refresh: refreshBackend } = useBackendStatus();
+  const { status: backendStatus, refresh: refreshBackend } = useBackendStatus();
   const isOnline = useOnlineStatus();
+  const toast = useToast();
 
   const [stats, setStats] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [conflictCount, setConflictCount] = useState(0);
   const [engineState, setEngineState] = useState(syncState.getState());
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncNotice, setSyncNotice] = useState('');
 
   const loadOperationalState = async () => {
     try {
@@ -64,21 +67,21 @@ export function DashboardPage() {
 
   const handleQuickSync = async () => {
     setIsSyncing(true);
-    setSyncNotice('Synchronizing changes...');
     try {
       const res = await syncManager.triggerManualSync();
       if (res?.skipped) {
-        setSyncNotice(`Sync skipped: ${res.reason}`);
+        toast.warning('Sync Skipped', `Engine status: ${res.reason}`);
       } else if (res?.failed) {
-        setSyncNotice(`Sync failed: ${res.error}`);
+        toast.error('Sync Encountered Error', res.error || 'Failed to reach cloud database');
+      } else if (res?.conflicts > 0) {
+        toast.warning('Conflict Detected', `${res.conflicts} concurrency conflict(s) require review`);
       } else {
-        setSyncNotice(`Synced: ${res.succeeded || 0} succeeded, ${res.conflicts || 0} conflicts.`);
+        toast.success('Synchronization Complete', `${res.succeeded || 0} change(s) synced with central database`);
       }
     } catch (err) {
-      setSyncNotice(`Sync error: ${err.message}`);
+      toast.error('Sync Error', err.message);
     } finally {
       setIsSyncing(false);
-      setTimeout(() => setSyncNotice(''), 3500);
       await loadOperationalState();
     }
   };
@@ -92,46 +95,39 @@ export function DashboardPage() {
   return (
     <div className="space-y-8 py-2 max-w-7xl mx-auto">
       {/* Hero Section */}
-      <section className="relative overflow-hidden rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-900/90 via-slate-900/60 to-slate-950 p-6 sm:p-10 shadow-2xl backdrop-blur-md">
+      <section className="relative overflow-hidden rounded-3xl border border-slate-800/80 bg-gradient-to-br from-slate-900/90 via-slate-900/70 to-slate-950 p-6 sm:p-10 shadow-2xl backdrop-blur-xl transition-all">
         <div className="max-w-3xl space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <Sparkles className="h-3.5 w-3.5" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-teal-500/10 text-teal-400 border border-teal-500/20 shadow-xs">
+            <Sparkles className="h-3.5 w-3.5 text-teal-300" />
             <span>FIELDNOTE · Offline-First Field Operations Workspace</span>
           </div>
 
           <div className="space-y-2">
-            <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white">
-              Work anywhere. Sync when connected.
+            <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white leading-tight">
+              Work anywhere. <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-300 via-emerald-400 to-teal-500">Sync when connected.</span>
             </h1>
-            <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-              Frontline operations workspace engineered for reliable offline execution. All site inspections, checklist tasks, and project edits are persisted instantly in IndexedDB and automatically reconciled upon reconnection.
+            <p className="text-sm sm:text-base text-slate-300/90 leading-relaxed font-normal">
+              Mission-critical field operations workspace designed for disconnected field environments. All inspections, checklist items, and project updates commit instantly to local IndexedDB and reconcile transparently upon reconnection.
             </p>
           </div>
 
           <div className="pt-2 flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs">
+            <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs shadow-xs">
               <span className="text-slate-400 font-medium">Status:</span>
               <ConnectionStatus />
             </div>
 
-            <button
-              type="button"
+            <MagneticButton
               onClick={handleQuickSync}
-              disabled={isSyncing || !isOnline}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-emerald-950/40 cursor-pointer"
+              disabled={isSyncing || !engineState.isOnline}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-slate-950 bg-teal-400 hover:bg-teal-300 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-teal-950/40 cursor-pointer"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
               <span>{isSyncing ? 'Syncing...' : 'Sync Now'}</span>
-            </button>
+            </MagneticButton>
 
             <InstallButton />
           </div>
-
-          {syncNotice && (
-            <div className="text-xs text-cyan-300 bg-cyan-950/40 border border-cyan-800/40 px-3 py-1.5 rounded-lg inline-block animate-fade-in">
-              {syncNotice}
-            </div>
-          )}
         </div>
       </section>
 
@@ -139,11 +135,11 @@ export function DashboardPage() {
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-            <Database className="h-5 w-5 text-emerald-400" />
+            <Database className="h-5 w-5 text-teal-400" />
             <span>Live Workspace Telemetry</span>
           </h2>
           <span className="text-xs font-mono text-slate-500">
-            Last Synced: <strong className="text-slate-300">{formatLastSync(engineState.lastSyncAt)}</strong>
+            Last Synced: <strong className="text-slate-300 font-semibold">{formatLastSync(engineState.lastSyncAt)}</strong>
           </span>
         </div>
 
@@ -151,60 +147,66 @@ export function DashboardPage() {
           {/* Metric 1: Projects */}
           <Link
             to="/projects"
-            className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 hover:border-emerald-500/40 hover:bg-slate-900/70 transition-all group"
+            className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 hover:border-emerald-500/40 hover:bg-slate-900/70 card-interactive group"
           >
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-slate-400 font-medium">Field Projects</span>
-              <div className="p-2 rounded-xl bg-slate-800 text-emerald-400 group-hover:scale-105 transition-transform">
+              <div className="p-2 rounded-xl bg-slate-800 text-emerald-400 group-hover:scale-110 transition-transform">
                 <FolderKanban className="h-4 w-4" />
               </div>
             </div>
-            <div className="text-3xl font-extrabold text-white">{stats?.totalProjects ?? 0}</div>
+            <div className="text-3xl font-extrabold text-white">
+              <AnimatedCounter value={stats?.totalProjects ?? 0} />
+            </div>
             <span className="text-[11px] text-emerald-400/90 font-medium mt-1 inline-flex items-center gap-1">
-              Active workspaces <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+              Active workspaces <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
             </span>
           </Link>
 
           {/* Metric 2: Tasks */}
           <Link
             to="/tasks"
-            className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 hover:border-teal-500/40 hover:bg-slate-900/70 transition-all group"
+            className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 hover:border-teal-500/40 hover:bg-slate-900/70 card-interactive group"
           >
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-slate-400 font-medium">Field Tasks</span>
-              <div className="p-2 rounded-xl bg-slate-800 text-teal-400 group-hover:scale-105 transition-transform">
+              <div className="p-2 rounded-xl bg-slate-800 text-teal-400 group-hover:scale-110 transition-transform">
                 <CheckSquare className="h-4 w-4" />
               </div>
             </div>
-            <div className="text-3xl font-extrabold text-white">{stats?.totalTasks ?? 0}</div>
+            <div className="text-3xl font-extrabold text-white">
+              <AnimatedCounter value={stats?.totalTasks ?? 0} />
+            </div>
             <span className="text-[11px] text-teal-400/90 font-medium mt-1 inline-flex items-center gap-1">
-              Inspections & checklists <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+              Checklists & procedures <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
             </span>
           </Link>
 
           {/* Metric 3: Pending Outbox Changes */}
           <Link
             to="/sync-center"
-            className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 hover:border-cyan-500/40 hover:bg-slate-900/70 transition-all group"
+            className="p-5 rounded-2xl border border-slate-800 bg-slate-900/40 hover:border-cyan-500/40 hover:bg-slate-900/70 card-interactive group"
           >
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-slate-400 font-medium">Pending Changes</span>
-              <div className="p-2 rounded-xl bg-slate-800 text-cyan-400 group-hover:scale-105 transition-transform">
+              <div className="p-2 rounded-xl bg-slate-800 text-cyan-400 group-hover:scale-110 transition-transform">
                 <Clock className="h-4 w-4" />
               </div>
             </div>
-            <div className="text-3xl font-extrabold text-cyan-300">{pendingCount}</div>
+            <div className="text-3xl font-extrabold text-cyan-300">
+              <AnimatedCounter value={pendingCount} />
+            </div>
             <span className="text-[11px] text-slate-400 font-medium mt-1 block">
-              {pendingCount > 0 ? 'Queued in outbox' : 'All changes synchronized'}
+              {pendingCount > 0 ? `${pendingCount} mutation(s) in outbox` : 'All changes synchronized'}
             </span>
           </Link>
 
           {/* Metric 4: Concurrency Conflicts */}
           <Link
             to="/sync-center"
-            className={`p-5 rounded-2xl border transition-all group ${
+            className={`p-5 rounded-2xl border card-interactive group ${
               conflictCount > 0
-                ? 'border-amber-500/50 bg-amber-950/20 hover:bg-amber-950/30'
+                ? 'border-amber-500/60 bg-amber-950/20 hover:bg-amber-950/30'
                 : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
             }`}
           >
@@ -215,7 +217,7 @@ export function DashboardPage() {
               </div>
             </div>
             <div className={`text-3xl font-extrabold ${conflictCount > 0 ? 'text-amber-400 animate-pulse' : 'text-slate-300'}`}>
-              {conflictCount}
+              <AnimatedCounter value={conflictCount} />
             </div>
             <span className={`text-[11px] font-medium mt-1 inline-flex items-center gap-1 ${conflictCount > 0 ? 'text-amber-300' : 'text-slate-500'}`}>
               {conflictCount > 0 ? 'Action required in Sync Center ⚠' : 'Zero conflicts detected'}
@@ -225,7 +227,7 @@ export function DashboardPage() {
       </section>
 
       {/* Backend API Service Health Indicator */}
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 backdrop-blur-sm">
+      <section className="rounded-2xl border border-slate-800/80 bg-slate-900/40 p-5 backdrop-blur-sm card-interactive">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div
@@ -261,106 +263,58 @@ export function DashboardPage() {
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                {backendData
-                  ? `Service: ${backendData.service} · Status: ${backendData.status} · Optimistic concurrency: Active`
-                  : backendError
-                  ? `Notice: ${backendError}`
-                  : 'Probing Express endpoint GET /api/health...'}
+                {backendStatus === 'connected'
+                  ? 'Connected to Express backend. PostgreSQL pooling active with Supabase.'
+                  : !isOnline
+                  ? 'Device is disconnected. Client-side IndexedDB serves all requests.'
+                  : 'Backend server is unavailable. Local mutations remain safely buffered in Outbox.'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-center">
-            <button
-              onClick={refreshBackend}
-              className="text-xs text-slate-400 hover:text-white px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors"
-            >
-              Check Health
-            </button>
-            <span className="text-[11px] font-mono text-slate-500 bg-slate-950 px-2.5 py-1.5 rounded-lg border border-slate-800">
-              GET /api/health
-            </span>
-          </div>
+          <button
+            type="button"
+            onClick={refreshBackend}
+            className="self-start sm:self-center px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
+          >
+            Check Health
+          </button>
         </div>
       </section>
 
-      {/* Navigation Modules */}
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-bold tracking-tight text-white">Core Application Modules</h2>
-          <p className="text-xs text-slate-400">All workspaces operate with zero UI latency and offline persistence.</p>
-        </div>
+      {/* Quick Action Cards */}
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Link
+          to="/projects"
+          className="p-6 rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900/60 to-slate-950/60 card-interactive group"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-3 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20 group-hover:scale-105 transition-transform">
+              <FolderKanban className="h-6 w-6" />
+            </div>
+            <ArrowRight className="h-5 w-5 text-slate-500 group-hover:text-teal-400 group-hover:translate-x-1 transition-all" />
+          </div>
+          <h3 className="text-base font-bold text-white mb-1">Field Projects</h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Create and organize field engineering project directories, assign tasks, and track local synchronization status.
+          </p>
+        </Link>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* Card 1: Projects */}
-          <Link
-            to="/projects"
-            className="group rounded-2xl border border-slate-800/80 bg-slate-900/40 p-6 hover:bg-slate-900/80 hover:border-emerald-500/40 transition-all flex flex-col justify-between space-y-4"
-          >
-            <div className="space-y-3">
-              <div className="inline-flex p-3 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-105 transition-transform">
-                <FolderKanban className="h-6 w-6" />
-              </div>
-              <h3 className="text-base font-bold text-white group-hover:text-emerald-400 transition-colors flex items-center gap-1.5">
-                Projects Workspace
-                <ArrowRight className="h-4 w-4 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
-              </h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Create and organize field project sites, inspect documentation, and assign site audits.
-              </p>
+        <Link
+          to="/tasks"
+          className="p-6 rounded-2xl border border-slate-800/80 bg-gradient-to-br from-slate-900/60 to-slate-950/60 card-interactive group"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-105 transition-transform">
+              <CheckSquare className="h-6 w-6" />
             </div>
-            <div className="pt-3 border-t border-slate-800 text-[11px] text-slate-500 flex items-center justify-between">
-              <span>{stats?.totalProjects ?? 0} projects</span>
-              <span className="text-emerald-400 font-medium">Dexie IndexedDB</span>
-            </div>
-          </Link>
-
-          {/* Card 2: Tasks */}
-          <Link
-            to="/tasks"
-            className="group rounded-2xl border border-slate-800/80 bg-slate-900/40 p-6 hover:bg-slate-900/80 hover:border-teal-500/40 transition-all flex flex-col justify-between space-y-4"
-          >
-            <div className="space-y-3">
-              <div className="inline-flex p-3 rounded-2xl bg-teal-500/10 text-teal-400 border border-teal-500/20 group-hover:scale-105 transition-transform">
-                <CheckSquare className="h-6 w-6" />
-              </div>
-              <h3 className="text-base font-bold text-white group-hover:text-teal-400 transition-colors flex items-center gap-1.5">
-                Tasks & Inspections
-                <ArrowRight className="h-4 w-4 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
-              </h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Execute checklist items, advance lifecycle statuses, set priorities, and resolve version conflicts.
-              </p>
-            </div>
-            <div className="pt-3 border-t border-slate-800 text-[11px] text-slate-500 flex items-center justify-between">
-              <span>{stats?.totalTasks ?? 0} tasks</span>
-              <span className="text-teal-400 font-medium">Optimistic versioning</span>
-            </div>
-          </Link>
-
-          {/* Card 3: Sync Center */}
-          <Link
-            to="/sync-center"
-            className="group rounded-2xl border border-slate-800/80 bg-slate-900/40 p-6 hover:bg-slate-900/80 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-4"
-          >
-            <div className="space-y-3">
-              <div className="inline-flex p-3 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 group-hover:scale-105 transition-transform">
-                <RefreshCw className="h-6 w-6" />
-              </div>
-              <h3 className="text-base font-bold text-white group-hover:text-cyan-400 transition-colors flex items-center gap-1.5">
-                Sync Control Center
-                <ArrowRight className="h-4 w-4 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
-              </h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Monitor mutation outbox queue, inspect pending writes, resolve HTTP 409 conflicts, and trigger manual sync.
-              </p>
-            </div>
-            <div className="pt-3 border-t border-slate-800 text-[11px] text-slate-500 flex items-center justify-between">
-              <span>{pendingCount} pending · {conflictCount} conflicts</span>
-              <span className="text-cyan-400 font-medium">Sync Engine</span>
-            </div>
-          </Link>
-        </div>
+            <ArrowRight className="h-5 w-5 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all" />
+          </div>
+          <h3 className="text-base font-bold text-white mb-1">Inspection Tasks</h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Execute inspection checklists, update operational statuses, change priorities, and manage offline field observations.
+          </p>
+        </Link>
       </section>
     </div>
   );

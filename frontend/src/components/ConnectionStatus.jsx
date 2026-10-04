@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Wifi, WifiOff, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { WifiOff, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { syncState, SYNC_STATE } from '../sync/syncState.js';
+import { syncManager } from '../sync/index.js';
 import conflictRepository from '../db/repositories/conflictRepository.js';
 import outboxRepository from '../db/repositories/outboxRepository.js';
 
@@ -69,7 +70,7 @@ export function ConnectionStatus() {
             syncManager.triggerSync();
           }
         }}
-        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-950/90 text-amber-300 border border-amber-600/70 shadow-sm transition-all duration-300 animate-pulse ${
+        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-950/80 text-amber-300 border border-amber-600/60 shadow-sm transition-all duration-200 ${
           engineState.isSimulatedOffline ? 'cursor-pointer hover:bg-amber-900/90' : 'cursor-default'
         }`}
         title={
