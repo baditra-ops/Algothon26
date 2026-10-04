@@ -7,10 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:db": "node src/db/__tests__/repositoryTestSuite.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "dexie": "^4.4.6",
     "lucide-react": "^1.51.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -21,6 +23,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "fake-indexeddb": "^6.2.5",
     "oxlint": "^1.81.0",
     "vite": "^8.3.0",
     "vite-plugin-pwa": "^2.0.0"
