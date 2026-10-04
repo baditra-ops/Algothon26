@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { config } from './config/index.js';
+import { testConnection } from './config/database.js';
 import apiRouter from './routes/index.js';
 import { notFoundHandler } from './middleware/notFoundHandler.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -33,9 +34,21 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // Start server
-const server = app.listen(config.port, () => {
+const server = app.listen(config.port, async () => {
   console.log(`[FIELDNOTE Backend] Server running on port ${config.port}`);
   console.log(`[FIELDNOTE Backend] Health check: http://localhost:${config.port}/api/health`);
+
+  // Run initial database connection probe
+  try {
+    const dbStatus = await testConnection();
+    if (dbStatus.connected) {
+      console.log(`[FIELDNOTE DB] Connected to PostgreSQL [${dbStatus.database}] in ${dbStatus.durationMs}ms`);
+    } else {
+      console.warn(`[FIELDNOTE DB] Database connection notice: ${dbStatus.message || dbStatus.error}`);
+    }
+  } catch (err) {
+    console.error('[FIELDNOTE DB] Database connection check error:', err.message);
+  }
 });
 
 // Graceful shutdown handling
