@@ -2,6 +2,7 @@ import db from './database.js';
 import { SYNC_STATUS, TASK_STATUS, TASK_PRIORITY } from './schema.js';
 import projectRepository from './repositories/projectRepository.js';
 import taskRepository from './repositories/taskRepository.js';
+import outboxRepository from './repositories/outboxRepository.js';
 
 /**
  * Development utilities for inspecting and managing the local IndexedDB database.
@@ -9,6 +10,7 @@ import taskRepository from './repositories/taskRepository.js';
 export async function getLocalDatabaseStats() {
   const allProjects = await db.projects.toArray();
   const allTasks = await db.tasks.toArray();
+  const outboxStats = await outboxRepository.getOutboxStats();
 
   const projectStatusCounts = allProjects.reduce((acc, p) => {
     acc[p.sync_status] = (acc[p.sync_status] || 0) + 1;
@@ -28,7 +30,8 @@ export async function getLocalDatabaseStats() {
     totalTasks: allTasks.length,
     activeTasks: allTasks.filter((t) => t.sync_status !== SYNC_STATUS.PENDING_DELETE).length,
     pendingDeleteTasks: allTasks.filter((t) => t.sync_status === SYNC_STATUS.PENDING_DELETE).length,
-    taskSyncBreakdown: taskStatusCounts
+    taskSyncBreakdown: taskStatusCounts,
+    outbox: outboxStats
   };
 }
 
@@ -52,14 +55,36 @@ export async function getPendingSyncRecords() {
 }
 
 /**
+ * Inspect all mutations in the outbox queue.
+ */
+export async function getOutboxMutations() {
+  return await outboxRepository.getAllMutations();
+}
+
+/**
+ * Inspect outbox mutations for a specific entity.
+ */
+export async function getEntityMutations(entityType, entityId) {
+  return await outboxRepository.getMutationsByEntity(entityType, entityId);
+}
+
+/**
+ * Clear completed mutations from the outbox.
+ */
+export async function clearCompletedMutations() {
+  return await outboxRepository.clearCompletedMutations();
+}
+
+/**
  * Wipe all local tables in IndexedDB (Development utility).
  */
 export async function clearLocalDatabase() {
-  await db.transaction('rw', db.projects, db.tasks, async () => {
+  await db.transaction('rw', db.projects, db.tasks, db.outbox, async () => {
     await db.projects.clear();
     await db.tasks.clear();
+    await db.outbox.clear();
   });
-  console.log('[FIELDNOTE DevTools] Local IndexedDB cleared.');
+  console.log('[FIELDNOTE DevTools] Local IndexedDB cleared (projects, tasks, outbox).');
   return { success: true, message: 'Local database cleared' };
 }
 
@@ -102,6 +127,7 @@ export async function seedDevelopmentData() {
     priority: TASK_PRIORITY.HIGH
   });
 
-  console.log('[FIELDNOTE DevTools] Sample development records seeded into IndexedDB.');
+  console.log('[FIELDNOTE DevTools] Sample development records seeded into IndexedDB with outbox entries.');
   return { success: true, projectIds: [proj1.id, proj2.id] };
 }
+

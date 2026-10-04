@@ -1,20 +1,24 @@
 import Dexie from 'dexie';
-import { DB_NAME, DB_VERSION, STORES_V1 } from './schema.js';
+import { DB_NAME, STORES_V1, STORES_V2 } from './schema.js';
 
 /**
  * FieldnoteDatabase encapsulates IndexedDB access through Dexie.js.
- * Provides client-side offline storage for projects and tasks.
+ * Provides client-side offline storage for projects, tasks, and mutation outbox.
  */
 export class FieldnoteDatabase extends Dexie {
   constructor() {
     super(DB_NAME);
 
-    // Schema version 1
-    this.version(DB_VERSION).stores(STORES_V1);
+    // Schema version 1: Initial tables
+    this.version(1).stores(STORES_V1);
+
+    // Schema version 2: Adds outbox mutation queue for offline sync buffer
+    this.version(2).stores(STORES_V2);
 
     // Explicitly define typed table properties
     this.projects = this.table('projects');
     this.tasks = this.table('tasks');
+    this.outbox = this.table('outbox');
   }
 }
 

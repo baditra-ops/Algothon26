@@ -4,7 +4,7 @@
  */
 
 export const DB_NAME = 'fieldnote_db';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 /**
  * Synchronization metadata status lifecycle:
@@ -35,11 +35,48 @@ export const TASK_PRIORITY = {
 };
 
 /**
+ * Outbox Mutation Entity Types
+ */
+export const ENTITY_TYPE = {
+  PROJECT: 'project',
+  TASK: 'task'
+};
+
+/**
+ * Outbox Mutation Operations
+ */
+export const MUTATION_OPERATION = {
+  CREATE: 'CREATE',
+  UPDATE: 'UPDATE',
+  DELETE: 'DELETE'
+};
+
+/**
+ * Outbox Mutation Lifecycle Statuses
+ */
+export const MUTATION_STATUS = {
+  PENDING: 'PENDING',
+  PROCESSING: 'PROCESSING',
+  FAILED: 'FAILED',
+  COMPLETED: 'COMPLETED'
+};
+
+/**
  * Dexie table store index definitions.
- * Primary key: id (UUID string)
- * Indexed fields are optimized for queries: project_id, status, priority, updated_at, sync_status
+ * Schema v1: Initial projects & tasks stores
  */
 export const STORES_V1 = {
   projects: 'id, updated_at, sync_status',
   tasks: 'id, project_id, status, priority, updated_at, sync_status'
 };
+
+/**
+ * Schema v2: Added outbox store for mutation queue
+ * Index fields: id (PK), entity_type, entity_id, operation, status, created_at, idempotency_key, [entity_type+entity_id]
+ */
+export const STORES_V2 = {
+  projects: 'id, updated_at, sync_status',
+  tasks: 'id, project_id, status, priority, updated_at, sync_status',
+  outbox: 'id, entity_type, entity_id, operation, status, created_at, idempotency_key, [entity_type+entity_id]'
+};
+
