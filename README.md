@@ -16,63 +16,47 @@ Standard cloud-centric web applications fail critically in these scenarios: form
 - All actions are committed immediately to the local device store with zero UI latency.
 - When connectivity is restored, an orchestration engine transparently reconciles pending changes with the central backend while handling conflicts safely.
 
-> **Current Status**: **Phase 5 — Local Mutation Queue / Outbox Buffer Operational.**  
-> Dexie schema v2 with `outbox` table, atomic transactions for entity and mutation writes, stable UUIDs and idempotency keys, safe mutation coalescing, server tombstone tracking with base versions, and Sync Center queue telemetry are fully implemented.  
-> *Note: Bi-directional synchronization and backend reconciliation will be introduced in Prompt 6, followed by conflict resolution in Prompt 7.*
+> **Current Status**: **Phase 6 — Offline Synchronization Engine Operational.**  
+> Bi-directional sync engine connecting local IndexedDB/outbox with REST API, pull reconciliation with local uncommitted record protection, optimistic concurrency with HTTP 409 detection, Dexie schema v3 with persistent `conflicts` table, bounded retry strategy with exponential backoff, single sync lock concurrency guard, and Sync Center manual/automatic telemetry are fully implemented.  
+> *Important: Prompt 6 implements synchronization mechanics, but conflict resolution is intentionally deferred to Prompt 7.*
 
 ---
 
 ## 2. Architecture & Pipeline
 
-FIELDNOTE deliberately maintains two distinct, decoupled data access layers at this stage:
+FIELDNOTE implements a decoupled, offline-first data pipeline:
 
-### 1. Client-Side Local Persistence & Atomic Outbox Queue (IndexedDB)
+### 1. Synchronization Architecture
 ```
 React UI
    │
    ▼
-Local Repositories (projectRepository / taskRepository)
+Sync Manager
    │
    ▼
-Atomic Dexie Transaction
-├── Update Projects / Tasks Record
-└── Enqueue / Coalesce Outbox Mutation
+Sync Engine
+├── Outbox Processor (Deterministic FIFO & Entity Dependency Order)
+├── Pull Service (Reconciliation protecting uncommitted local state)
+└── Conflict Detector (HTTP 409 Capture & Snapshot Preservation)
    │
    ▼
-IndexedDB (fieldnote_db, Schema v2)
-```
-
-### 2. Central Authoritative Cloud Store (PostgreSQL / Supabase)
-```
 API Service (frontend/src/services/api.js)
    │
    ▼
 REST API (/api/projects, /api/tasks)
    │
    ▼
-Express (CORS, Validation, Concurrency Guard)
+Express Backend (CORS, Validation, Concurrency Guard)
    │
    ▼
-Controllers & Services (Parameterized SQL)
-   │
-   ▼
-PostgreSQL Connection Pool (pg)
-   │
-   ▼
-Supabase (Cloud PostgreSQL)
-```
-
-### 3. Synchronization Pipeline (To Be Implemented in Prompt 6)
-```
-Outbox Buffer (IndexedDB)
-   ↕
-Sync Engine (Prompt 6)
-   ↕
-REST API (frontend/src/services/api.js)
-   ↕
-Express Backend
-   ↕
 Supabase PostgreSQL
+
+And Client-Side Storage:
+IndexedDB (fieldnote_db, Schema v3)
+├── projects
+├── tasks
+├── outbox
+└── conflicts
 ```
 
 ### Phased Roadmap
@@ -84,8 +68,8 @@ Supabase PostgreSQL
 | **Phase 3** | **PWA & Caching Layer**: Service Worker registration, manifest, application shell cache, online/offline detection | **Completed** |
 | **Phase 4** | **Client Persistence**: IndexedDB via Dexie.js, local repositories, sync metadata, offline CRUD | **Completed** |
 | **Phase 5** | **Offline Mutation Queue**: Outbox buffer, atomic writes, mutation coalescing, idempotency keys | **Completed** |
-| **Phase 6** | **Sync Engine & Reconciliation**: Bi-directional sync, conflict detection | Planned |
-| **Phase 7** | **Conflict Resolution**: Client Wins / Server Wins / Manual 3-way merge | Planned |
+| **Phase 6** | **Sync Engine & Reconciliation**: Bi-directional sync, optimistic concurrency, conflict persistence, retries, single lock | **Completed** |
+| **Phase 7** | **Conflict Resolution**: Client Wins / Server Wins / Manual 3-way merge UI | Planned |
 | **Phase 8** | **Polish & Demo Hardening**: Field inspection workflow, simulation controls | Planned |
 
 ---
@@ -268,46 +252,120 @@ Every repository mutation guarantees atomic write safety. If an outbox insertion
 
 ---
 
-## 6. Testing & Verification
+## 6. Synchronization Engine (Prompt 6)
 
-### 1. Run the Frontend IndexedDB & Outbox Test Suite (82 Assertions)
+### Overview
+The offline synchronization engine orchestrates bi-directional state synchronization between client-side IndexedDB (`fieldnote_db`) and the central Express + Supabase PostgreSQL backend. It connects the local outbox buffer with existing REST APIs while respecting network boundaries, concurrency locks, and optimistic versioning.
+
+> **Important Boundary Confirmation**: Prompt 6 implements synchronization mechanics, optimistic concurrency detection, and snapshot persistence, but **conflict resolution is intentionally deferred to Prompt 7**. No automatic overwrites or conflict resolution UI are introduced in this phase.
+
+### Core Components
+- **`syncEngine.js`**: Main orchestrator. Executes queued mutation playback, coordinates dependency-based ordering, triggers authoritative pull reconciliation, and enforces transaction-safe state progression.
+- **`syncManager.js`**: Lifecycle coordinator. Listens to `online` window events, triggers startup synchronization when online, debounces rapid local writes (50ms) before sync dispatch, and provides manual "Sync Now" triggers.
+- **`syncLock.js`**: In-memory single-sync lock. Guarantees that only one synchronization process owns the queue at any time. Concurrent triggers safely join the in-flight Promise or yield cleanly.
+- **`syncState.js`**: Dedicated synchronization state machine (`IDLE`, `SYNCING`, `OFFLINE`, `ERROR`, `CONFLICT`) providing non-intrusive reactive telemetry to the React UI without external state libraries.
+- **`mutationProcessor.js`**: Single mutation executor. Encapsulates entity-specific API transmissions, captures HTTP 409 responses, handles response transformations, and manages transient retry schedules.
+- **`pullService.js`**: Authoritative server pull reconciliation. Fetches projects and tasks, inserting newly discovered remote entities and updating existing records while strictly protecting uncommitted local changes.
+
+### Mutation Processing Order
+Outbox mutations are processed deterministically in chronological order with explicit entity dependency enforcement:
+1. **Entity Dependencies**: A parent project `CREATE` is guaranteed to be sent to the server before any child task `CREATE` that belongs to that project, regardless of timestamp skew.
+2. **Sequential FIFO**: All other operations follow strict `created_at` ordering.
+3. **Coalescing**: As established in Prompt 5, multiple edits to the same pending entity are coalesced in-place, eliminating redundant API roundtrips.
+
+### Bounded Retry Strategy
+Network and server failures are classified into transient and non-transient categories:
+- **Transient Failures (Retried)**: Network drop/timeout, HTTP 408, 429, 500, 502, 503, 504.
+  - Bounded to `MAX_RETRIES = 3`.
+  - Exponential backoff: $delay = baseDelay \times 2^{attempts} + jitter$.
+  - Mutation remains `PENDING` with updated `attempt_count`, `last_attempt_at`, and `last_error`.
+  - Upon exhausting 3 attempts, mutation transitions to `FAILED` and halts automated retries.
+- **Non-Transient Failures (Halted Immediately)**:
+  - HTTP 400 (Validation / Bad Request) -> Marked `FAILED`.
+  - HTTP 404 (Not Found) -> If DELETE on already-absent resource, reconciled as completed; otherwise marked `FAILED`.
+  - HTTP 409 (Version Conflict) -> Never retried; transitioned to `CONFLICT`.
+
+### Task Version Handling & Optimistic Concurrency
+1. **Creation**: Locally created tasks initialize with `version = 0`. Upon successful `POST /api/tasks`, the server returns authoritative `version = 1`. The local IndexedDB record is replaced with server-confirmed fields, `sync_status = SYNCED`, and `last_synced_at = now()`.
+2. **Update**: Task edits capture the server-assigned version into `base_version` within the outbox mutation. When transmitting `PUT /api/tasks/:id`, the request payload includes `version: mutation.base_version`.
+3. **Success**: Server increments version ($N \to N+1$), returns updated record; client persists new server version and resets `sync_status = SYNCED`.
+
+### HTTP 409 Conflict Detection & Persistence
+When a concurrent update occurs on the server, the backend rejects stale versions with `HTTP 409 Conflict` and payload `{ error: "VERSION_CONFLICT", message: "...", serverTask: { ... } }`.
+
+When detected by the sync engine:
+1. The local task is **preserved** and marked `sync_status = CONFLICT`.
+2. The mutation is **not completed** and marked `status = CONFLICT`.
+3. The conflict is persistently recorded in the Dexie `conflicts` table (Schema v3 migration):
+   ```javascript
+   {
+     id: generateId(),
+     entity_type: 'task',
+     entity_id: mutation.entity_id,
+     mutation_id: mutation.id,
+     local_snapshot: localTask,
+     server_snapshot: serverTask,
+     base_version: mutation.base_version,
+     server_version: serverTask.version,
+     created_at: new Date().toISOString(),
+     status: 'PENDING'
+   }
+   ```
+4. Synchronization state updates to `CONFLICT`, providing full visibility in the Sync Center while allowing unrelated tasks to continue synchronizing.
+5. Conflict resolution is **not performed**; data is safely preserved for Prompt 7.
+
+### Server Pull & Local Record Protection
+Authoritative server state is fetched via `GET /api/projects` followed by `GET /api/tasks`. To prevent server data from destroying in-flight user edits, the pull service enforces strict protection rules:
+- **`SYNCED` local record**: Server data updates the local record.
+- **`PENDING_CREATE` local record**: Local record protected; server record skipped.
+- **`PENDING_UPDATE` local record**: Local uncommitted edits protected; server record skipped.
+- **`PENDING_DELETE` local tombstone**: Tombstone protected; server record skipped.
+- **`CONFLICT` local record**: Conflicted record protected; neither side automatically overwritten.
+- **Non-existent local record**: Inserted cleanly as `SYNCED`.
+
+### Idempotency Key Limitation Note
+Every outbox mutation generates and preserves a stable client-side UUID `idempotency_key`. The client sends this key in headers/payloads where supported. Because the current Express backend does not yet enforce server-side idempotency tables, the client-side synchronization engine treats network interruptions conservatively and preserves keys across retries. True server-side idempotency deduplication remains documented as a future enhancement.
+
+---
+
+## 7. Testing & Verification
+
+### 1. Run Complete Frontend Test Suites (128 Assertions)
 ```bash
 cd frontend
-npm run test:db
+npm test
 ```
-Verifies:
-- Schema v2 initialization and `outbox` table index verification
-- Non-destructive v1 → v2 migration preserving legacy projects & tasks
-- Atomic project CREATE with outbox mutation
-- Atomic task CREATE with `version = 0` and `base_version = null`
-- Safe mutation coalescing (CREATE + UPDATE in-place payload updates)
-- Server-known task UPDATE with server `base_version` preservation
-- Repeated UPDATE coalescing preserving mutation ID, idempotency key, and `base_version`
-- Local-only deletion physically purging records and pending outbox mutations
-- Server-known deletion retaining tombstones and enqueuing DELETE mutations with `base_version`
-- Project deletion handling local and server child tasks consistently
-- Transaction atomicity & rollback on failure (zero partial state)
-- Outbox lifecycle transitions (`PENDING -> PROCESSING -> FAILED -> PENDING -> COMPLETED`)
-- Terminal status protection (preventing invalid transition from `COMPLETED`)
-- Developer telemetry and outbox statistics reporting
+Executes both test suites in sequence:
+- **`npm run test:db` (82 Assertions)**: Database Schema v2/v3, non-destructive migration, atomic entity + outbox writes, mutation coalescing, server tombstones, and lifecycle transitions.
+- **`npm run test:sync` (46 Assertions)**: 
+  - Project CREATE outbox synchronization and UUID preservation.
+  - Task CREATE outbox synchronization and `version 0 -> 1` assignment.
+  - Task UPDATE optimistic concurrency verification (`base_version` transmission and server increment persistence).
+  - Server DELETE synchronization and tombstone physical purge.
+  - Server pull reconciliation and protection of `PENDING_CREATE`, `PENDING_UPDATE`, `PENDING_DELETE`, and `CONFLICT` records.
+  - HTTP 409 conflict detection, snapshot preservation, and Dexie `conflicts` table persistence.
+  - Bounded exponential retries on HTTP 503/transient errors with attempt persistence.
+  - Single sync lock enforcement preventing concurrent duplicate runs.
+  - Offline connectivity guard preventing network attempts while disconnected.
+  - Deterministic mutation ordering ensuring parent project creation precedes child tasks.
 
-### 2. Run the Backend REST API Test Suite (41 Assertions)
+### 2. Run Backend REST API Test Suite (41 Assertions)
 ```bash
 cd backend
 npm test
 ```
-Verifies that all server-side Supabase PostgreSQL endpoints, task version increments (`1 -> 2 -> 3`), optimistic concurrency (`HTTP 409 Conflict`), and cascading deletes remain functional.
+Verifies health check, project CRUD, task creation and versioning, optimistic concurrency with HTTP 409 responses, validation errors, and PostgreSQL cascading deletes.
 
 ### 3. Production Build
 ```bash
 cd frontend
 npm run build
 ```
-Compiles cleanly in ~1 second with PWA service worker, Dexie schema v2, and outbox telemetry.
+Compiles Vite production bundle with PWA service worker precaching, Dexie schema v3, and Sync Center UI.
 
 ---
 
-## 7. How to Run Locally
+## 8. How to Run Locally
 
 ### 1. Backend Server
 ```bash

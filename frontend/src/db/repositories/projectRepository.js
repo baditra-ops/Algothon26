@@ -1,6 +1,7 @@
 import db from '../database.js';
 import { SYNC_STATUS, ENTITY_TYPE, MUTATION_OPERATION, MUTATION_STATUS } from '../schema.js';
 import { validateProject } from '../validation.js';
+import syncManager from '../../sync/syncManager.js';
 
 /**
  * Generate a client UUIDv4 using native browser crypto or fallback.
@@ -64,6 +65,7 @@ export const projectRepository = {
         await db.projects.add(record);
         await db.outbox.add(mutation);
       });
+      syncManager?.notifyMutationCreated?.();
     } else {
       await db.projects.add(record);
     }
@@ -190,6 +192,7 @@ export const projectRepository = {
       resultRecord = updatedRecord;
     });
 
+    syncManager?.notifyMutationCreated?.();
     return resultRecord;
   },
 
@@ -359,6 +362,9 @@ export const projectRepository = {
       deleted = true;
     });
 
+    if (deleted) {
+      syncManager?.notifyMutationCreated?.();
+    }
     return deleted;
   },
 

@@ -76,15 +76,26 @@ export async function clearCompletedMutations() {
 }
 
 /**
+ * Inspect conflict records in the conflicts store.
+ */
+export async function getConflicts() {
+  if (!db.conflicts) return [];
+  return await db.conflicts.toArray();
+}
+
+/**
  * Wipe all local tables in IndexedDB (Development utility).
  */
 export async function clearLocalDatabase() {
-  await db.transaction('rw', db.projects, db.tasks, db.outbox, async () => {
+  await db.transaction('rw', db.projects, db.tasks, db.outbox, db.conflicts, async () => {
     await db.projects.clear();
     await db.tasks.clear();
     await db.outbox.clear();
+    if (db.conflicts) {
+      await db.conflicts.clear();
+    }
   });
-  console.log('[FIELDNOTE DevTools] Local IndexedDB cleared (projects, tasks, outbox).');
+  console.log('[FIELDNOTE DevTools] Local IndexedDB cleared (projects, tasks, outbox, conflicts).');
   return { success: true, message: 'Local database cleared' };
 }
 

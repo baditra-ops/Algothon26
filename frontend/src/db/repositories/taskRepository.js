@@ -1,6 +1,7 @@
 import db from '../database.js';
 import { SYNC_STATUS, TASK_STATUS, TASK_PRIORITY, ENTITY_TYPE, MUTATION_OPERATION, MUTATION_STATUS } from '../schema.js';
 import { validateTask } from '../validation.js';
+import syncManager from '../../sync/syncManager.js';
 
 function generateId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -73,6 +74,7 @@ export const taskRepository = {
         await db.tasks.add(record);
         await db.outbox.add(mutation);
       });
+      syncManager?.notifyMutationCreated?.();
     } else {
       await db.tasks.add(record);
     }
@@ -227,6 +229,7 @@ export const taskRepository = {
       resultRecord = updatedRecord;
     });
 
+    syncManager?.notifyMutationCreated?.();
     return resultRecord;
   },
 
@@ -304,6 +307,9 @@ export const taskRepository = {
       deleted = true;
     });
 
+    if (deleted) {
+      syncManager?.notifyMutationCreated?.();
+    }
     return deleted;
   },
 

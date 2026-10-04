@@ -4,7 +4,7 @@
  */
 
 export const DB_NAME = 'fieldnote_db';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 /**
  * Synchronization metadata status lifecycle:
@@ -58,7 +58,8 @@ export const MUTATION_STATUS = {
   PENDING: 'PENDING',
   PROCESSING: 'PROCESSING',
   FAILED: 'FAILED',
-  COMPLETED: 'COMPLETED'
+  COMPLETED: 'COMPLETED',
+  CONFLICT: 'CONFLICT'
 };
 
 /**
@@ -79,4 +80,16 @@ export const STORES_V2 = {
   tasks: 'id, project_id, status, priority, updated_at, sync_status',
   outbox: 'id, entity_type, entity_id, operation, status, created_at, idempotency_key, [entity_type+entity_id]'
 };
+
+/**
+ * Schema v3: Added conflicts store for Prompt 6 & 7 concurrency conflict snapshots
+ * Index fields: id (PK), entity_type, entity_id, mutation_id, created_at, status
+ */
+export const STORES_V3 = {
+  projects: 'id, updated_at, sync_status',
+  tasks: 'id, project_id, status, priority, updated_at, sync_status',
+  outbox: 'id, entity_type, entity_id, operation, status, created_at, idempotency_key, [entity_type+entity_id]',
+  conflicts: 'id, entity_type, entity_id, mutation_id, created_at, status'
+};
+
 

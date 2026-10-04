@@ -11,8 +11,9 @@ import { validateMutation } from '../validation.js';
  */
 const VALID_TRANSITIONS = {
   [MUTATION_STATUS.PENDING]: [MUTATION_STATUS.PROCESSING],
-  [MUTATION_STATUS.PROCESSING]: [MUTATION_STATUS.COMPLETED, MUTATION_STATUS.FAILED],
+  [MUTATION_STATUS.PROCESSING]: [MUTATION_STATUS.COMPLETED, MUTATION_STATUS.FAILED, MUTATION_STATUS.CONFLICT, MUTATION_STATUS.PENDING],
   [MUTATION_STATUS.FAILED]: [MUTATION_STATUS.PENDING, MUTATION_STATUS.PROCESSING],
+  [MUTATION_STATUS.CONFLICT]: [MUTATION_STATUS.PENDING], // Allowed during Prompt 7 conflict resolution
   [MUTATION_STATUS.COMPLETED]: [] // Terminal state
 };
 
@@ -183,6 +184,22 @@ export const outboxRepository = {
   },
 
   /**
+   * Transition mutation from PROCESSING to CONFLICT.
+   * Records HTTP 409 version conflict state without marking completed.
+   */
+  async markMutationConflict(id, error) {
+    const safeMessage = error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : 'Version conflict detected (HTTP 409)';
+
+    return await this.updateMutationStatus(id, MUTATION_STATUS.CONFLICT, {
+      last_error: safeMessage
+    });
+  },
+
+  /**
    * Get aggregated outbox telemetry and status counts.
    */
   async getOutboxStats() {
@@ -192,7 +209,8 @@ export const outboxRepository = {
       [MUTATION_STATUS.PENDING]: 0,
       [MUTATION_STATUS.PROCESSING]: 0,
       [MUTATION_STATUS.FAILED]: 0,
-      [MUTATION_STATUS.COMPLETED]: 0
+      [MUTATION_STATUS.COMPLETED]: 0,
+      [MUTATION_STATUS.CONFLICT]: 0
     };
 
     const operationCounts = {
@@ -224,6 +242,7 @@ export const outboxRepository = {
       processing: statusCounts[MUTATION_STATUS.PROCESSING],
       failed: statusCounts[MUTATION_STATUS.FAILED],
       completed: statusCounts[MUTATION_STATUS.COMPLETED],
+      conflicts: statusCounts[MUTATION_STATUS.CONFLICT],
       statusCounts,
       operationCounts,
       entityCounts
