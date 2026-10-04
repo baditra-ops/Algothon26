@@ -10,13 +10,17 @@ import {
   Server,
   Sparkles,
   Layers,
-  CheckCircle2,
-  AlertCircle
+  Smartphone,
+  ShieldCheck
 } from 'lucide-react';
 import { useBackendStatus } from '../hooks/useBackendStatus';
+import { ConnectionStatus } from '../components/ConnectionStatus';
+import { InstallButton } from '../components/InstallButton';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 export function DashboardPage() {
   const { status: backendStatus, data: backendData, error: backendError, refresh } = useBackendStatus();
+  const isOnline = useOnlineStatus();
 
   return (
     <div className="space-y-12 py-2">
@@ -26,7 +30,7 @@ export function DashboardPage() {
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <Sparkles className="h-3.5 w-3.5" />
-            <span>Problem Statement ALG-WEB-02 · Hackathon Prototype</span>
+            <span>Problem Statement ALG-WEB-02 · Progressive Web App</span>
           </div>
 
           {/* Title & Tagline */}
@@ -42,26 +46,24 @@ export function DashboardPage() {
           {/* Description */}
           <p className="text-base sm:text-lg text-slate-300 leading-relaxed font-normal">
             FIELDNOTE is an offline-first workspace engineered for field engineers, audit teams, and remote operations.
-            The application is designed to continue working seamlessly even when network connectivity is intermittent or completely unavailable,
-            safely capturing changes and orchestrating reliable synchronization once reconnected.
+            The application shell is cached on device via a Service Worker, ensuring the interface remains fully operational even when connectivity drops.
           </p>
 
-          {/* Status Indicator Callout */}
+          {/* Real-time Connectivity Status Callout */}
           <div className="pt-2 flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-700/60 shadow-inner">
-              <span className="text-xs font-medium text-slate-400">Current Connectivity:</span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/90 text-emerald-400 border border-emerald-700/60">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                ● Online
-              </span>
-              <span className="text-[11px] text-slate-500 italic hidden sm:inline">
-                (Visual placeholder · Dynamic detection in Prompt 2)
+              <span className="text-xs font-medium text-slate-400">Network State:</span>
+              <ConnectionStatus />
+              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                {isOnline ? '(Real-time browser online)' : '(Cached app shell active)'}
               </span>
             </div>
 
+            <InstallButton />
+
             <button
               onClick={refresh}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               <span>Verify Backend API</span>
@@ -74,18 +76,44 @@ export function DashboardPage() {
       <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 backdrop-blur-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${backendStatus === 'connected' ? 'bg-emerald-950/70 text-emerald-400' : backendStatus === 'checking' ? 'bg-amber-950/70 text-amber-400' : 'bg-rose-950/70 text-rose-400'}`}>
+            <div
+              className={`p-2 rounded-lg ${
+                backendStatus === 'connected'
+                  ? 'bg-emerald-950/70 text-emerald-400'
+                  : backendStatus === 'checking'
+                  ? 'bg-amber-950/70 text-amber-400'
+                  : 'bg-rose-950/70 text-rose-400'
+              }`}
+            >
               <Server className="h-5 w-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-semibold text-white">REST API Service Status</h3>
-                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${backendStatus === 'connected' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : backendStatus === 'checking' ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-400'}`}>
-                  {backendStatus === 'connected' ? 'Active & Responding' : backendStatus === 'checking' ? 'Checking /api/health...' : 'Unreachable'}
+                <span
+                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                    backendStatus === 'connected'
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : backendStatus === 'checking'
+                      ? 'bg-amber-500/20 text-amber-300'
+                      : 'bg-rose-500/20 text-rose-400'
+                  }`}
+                >
+                  {backendStatus === 'connected'
+                    ? 'Active & Responding'
+                    : backendStatus === 'checking'
+                    ? 'Checking /api/health...'
+                    : !isOnline
+                    ? 'Offline (Network Paused)'
+                    : 'Unreachable'}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                {backendData ? `Connected to ${backendData.service} · Status: ${backendData.status} · Timestamp: ${backendData.timestamp}` : backendError ? `Connection failed: ${backendError}` : 'Probing Express endpoint GET /api/health...'}
+                {backendData
+                  ? `Connected to ${backendData.service} · Status: ${backendData.status} · Timestamp: ${backendData.timestamp}`
+                  : backendError
+                  ? `Connection notice: ${backendError}`
+                  : 'Probing Express endpoint GET /api/health...'}
               </p>
             </div>
           </div>
@@ -123,7 +151,7 @@ export function DashboardPage() {
             </div>
             <div className="mt-6 pt-4 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500">
               <span>Section ready</span>
-              <span className="text-emerald-400 font-medium">Foundation active</span>
+              <span className="text-emerald-400 font-medium">Shell cached</span>
             </div>
           </Link>
 
@@ -146,7 +174,7 @@ export function DashboardPage() {
             </div>
             <div className="mt-6 pt-4 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500">
               <span>Section ready</span>
-              <span className="text-teal-400 font-medium">Foundation active</span>
+              <span className="text-teal-400 font-medium">Shell cached</span>
             </div>
           </Link>
 
@@ -169,7 +197,7 @@ export function DashboardPage() {
             </div>
             <div className="mt-6 pt-4 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500">
               <span>Section ready</span>
-              <span className="text-cyan-400 font-medium">Foundation active</span>
+              <span className="text-cyan-400 font-medium">Shell cached</span>
             </div>
           </Link>
         </div>
@@ -188,34 +216,52 @@ export function DashboardPage() {
             </p>
           </div>
           <span className="text-xs font-mono px-2.5 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700">
-            Phase 1 of 5
+            Phase 3 of 8
           </span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
             { step: '01', title: 'React + Vite', desc: 'Frontend Client Shell', state: 'active' },
-            { step: '02', title: 'PWA / SW', desc: 'Asset Caching Layer', state: 'planned' },
-            { step: '03', title: 'IndexedDB', desc: 'Dexie.js Client Storage', state: 'planned' },
-            { step: '04', title: 'Offline Queue', desc: 'Conflict-Free Sync Engine', state: 'planned' },
-            { step: '05', title: 'Express API', desc: 'Node.js REST Services', state: 'active' },
-            { step: '06', title: 'PostgreSQL', desc: 'Supabase Cloud Store', state: 'planned' },
+            { step: '02', title: 'REST & DB', desc: 'Express + PostgreSQL', state: 'active' },
+            { step: '03', title: 'PWA / SW', desc: 'App Shell Precached', state: 'active' },
+            { step: '04', title: 'IndexedDB', desc: 'Dexie Local Store', state: 'next' },
+            { step: '05', title: 'Sync Queue', desc: 'Offline Mutation Buffer', state: 'planned' },
+            { step: '06', title: 'Conflicts', desc: '3-Way Reconciliation', state: 'planned' },
           ].map((item) => (
             <div
               key={item.step}
               className={`rounded-xl p-3.5 border flex flex-col justify-between ${
                 item.state === 'active'
                   ? 'border-emerald-500/40 bg-emerald-950/20'
+                  : item.state === 'next'
+                  ? 'border-cyan-500/40 bg-cyan-950/20'
                   : 'border-slate-800/60 bg-slate-900/20 opacity-70'
               }`}
             >
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-[11px] font-mono">
-                  <span className={item.state === 'active' ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+                  <span
+                    className={
+                      item.state === 'active'
+                        ? 'text-emerald-400 font-bold'
+                        : item.state === 'next'
+                        ? 'text-cyan-400 font-bold'
+                        : 'text-slate-500'
+                    }
+                  >
                     {item.step}
                   </span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${item.state === 'active' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'}`}>
-                    {item.state === 'active' ? 'Built' : 'Next'}
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded ${
+                      item.state === 'active'
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : item.state === 'next'
+                        ? 'bg-cyan-500/20 text-cyan-300'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {item.state === 'active' ? 'Built' : item.state === 'next' ? 'Prompt 4' : 'Planned'}
                   </span>
                 </div>
                 <div className="text-xs font-bold text-white mt-1">{item.title}</div>

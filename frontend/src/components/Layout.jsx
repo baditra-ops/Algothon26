@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Navbar } from './Navbar';
+import { OfflineBanner } from './OfflineBanner';
 import { ShieldCheck, Cpu } from 'lucide-react';
 
 export function Layout() {
@@ -14,6 +15,9 @@ export function Layout() {
 
       {/* Navigation header */}
       <Navbar />
+
+      {/* Offline notification banner */}
+      <OfflineBanner />
 
       {/* Main page content */}
       <main className="flex-1 relative z-10 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -32,7 +36,7 @@ export function Layout() {
           <div className="flex items-center gap-4">
             <span className="inline-flex items-center gap-1.5 text-slate-400">
               <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Foundation Phase (Prompt 1)</span>
+              <span>PWA Foundation (Prompt 3)</span>
             </span>
             <span className="inline-flex items-center gap-1.5 text-slate-500">
               <Cpu className="h-3.5 w-3.5" />

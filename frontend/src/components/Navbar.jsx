@@ -9,7 +9,8 @@ import {
   Menu,
   X
 } from 'lucide-react';
-import { StatusBadge } from './StatusBadge';
+import { ConnectionStatus } from './ConnectionStatus';
+import { InstallButton } from './InstallButton';
 
 const navItems = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -66,9 +67,10 @@ export function Navbar() {
             </nav>
           </div>
 
-          {/* Right Section: Connectivity Indicator */}
-          <div className="flex items-center gap-4">
-            <StatusBadge />
+          {/* Right Section: Install button & Connectivity Indicator */}
+          <div className="flex items-center gap-3">
+            <InstallButton />
+            <ConnectionStatus />
 
             {/* Mobile menu button */}
             <button
