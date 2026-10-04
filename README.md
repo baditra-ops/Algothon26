@@ -16,9 +16,8 @@ Standard cloud-centric web applications fail critically in these scenarios: form
 - All actions are committed immediately to the local device store with zero UI latency.
 - When connectivity is restored, an orchestration engine transparently reconciles pending changes with the central backend while handling conflicts safely.
 
-> **Current Status**: **Phase 6 — Offline Synchronization Engine Operational.**  
-> Bi-directional sync engine connecting local IndexedDB/outbox with REST API, pull reconciliation with local uncommitted record protection, optimistic concurrency with HTTP 409 detection, Dexie schema v3 with persistent `conflicts` table, bounded retry strategy with exponential backoff, single sync lock concurrency guard, and Sync Center manual/automatic telemetry are fully implemented.  
-> *Important: Prompt 6 implements synchronization mechanics, but conflict resolution is intentionally deferred to Prompt 7.*
+> **Current Status**: **Phase 7 — Offline Conflict Resolution & Interactive UI Operational.**  
+> User-driven conflict resolution engine and side-by-side comparison modal fully operational. Preserves local and server snapshots upon HTTP 409 `VERSION_CONFLICT` without silent data overwrites or automatic last-write-wins. Provides three explicit resolution strategies: **Keep Local**, **Keep Server**, and **Merge / Edit**, executed inside atomic Dexie transactions, removing stale mutations, and re-synchronizing with updated server version bases.
 
 ---
 
@@ -28,7 +27,13 @@ FIELDNOTE implements a decoupled, offline-first data pipeline:
 
 ### 1. Synchronization Architecture
 ```
-React UI
+React UI (Tasks & Sync Center)
+   │
+   ▼
+Conflict Resolution UI (Side-by-Side Comparison & Merge Editor)
+   │
+   ▼
+Conflict Repository & Service (Atomic Transactions: tasks + outbox + conflicts)
    │
    ▼
 Sync Manager
@@ -69,7 +74,7 @@ IndexedDB (fieldnote_db, Schema v3)
 | **Phase 4** | **Client Persistence**: IndexedDB via Dexie.js, local repositories, sync metadata, offline CRUD | **Completed** |
 | **Phase 5** | **Offline Mutation Queue**: Outbox buffer, atomic writes, mutation coalescing, idempotency keys | **Completed** |
 | **Phase 6** | **Sync Engine & Reconciliation**: Bi-directional sync, optimistic concurrency, conflict persistence, retries, single lock | **Completed** |
-| **Phase 7** | **Conflict Resolution**: Client Wins / Server Wins / Manual 3-way merge UI | Planned |
+| **Phase 7** | **Conflict Resolution**: Keep Local / Keep Server / Custom Merge UI, side-by-side comparison, atomic transactions | **Completed** |
 | **Phase 8** | **Polish & Demo Hardening**: Field inspection workflow, simulation controls | Planned |
 
 ---
@@ -328,26 +333,134 @@ Every outbox mutation generates and preserves a stable client-side UUID `idempot
 
 ---
 
-## 7. Testing & Verification
+## 7. Offline Conflict Resolution (Prompt 7)
 
-### 1. Run Complete Frontend Test Suites (128 Assertions)
+### Philosophy: No Silent Overwrites
+FIELDNOTE enforces a strict operational rule for field inspection and maintenance workflows:
+> **Never silently overwrite user data and never use automatic last-write-wins conflict resolution.**
+
+When the central backend detects concurrent divergence on a task update, it rejects the stale request with `HTTP 409 VERSION_CONFLICT` and provides the current authoritative `serverTask`. Both the field operator's offline changes and the cloud version are preserved in the persistent `conflicts` Dexie table, and the operator is prompted to review the side-by-side differences.
+
+### Conflict Lifecycle
+```text
+Offline Edit on Device A
+         │
+         ▼
+IndexedDB (tasks + outbox PENDING_UPDATE)
+         │
+         ▼
+Sync Engine Dispatches PUT with base_version = N
+         │
+         ▼
+Server has version = N + 1 (Concurrent edit on Device B)
+         │
+         ▼
+Server Responds with HTTP 409 { error: "VERSION_CONFLICT", serverTask }
+         │
+         ▼
+Sync Engine Captures Divergence:
+├── Task marked: sync_status = 'CONFLICT'
+├── Outbox Mutation marked: status = 'CONFLICT'
+└── Conflict Record Persisted: db.conflicts (status = 'PENDING')
+         │
+         ▼
+Sync Center / Tasks UI:
+Displays "⚠ Conflicts Requiring Attention"
+         │
+         ▼
+User Opens Side-by-Side Comparison Modal
+         │
+         ├───────────────────────┼───────────────────────┐
+         ▼                       ▼                       ▼
+    Option A:               Option B:               Option C:
+  [Keep Local]            [Keep Server]          [Merge / Edit]
+         │                       │                       │
+         ▼                       ▼                       ▼
+Adopts server version   Replaces task with     Combines field-by-field,
+as new optimistic base, server snapshot,       adopts server version base,
+queues new UPDATE,      marks SYNCED,          queues new UPDATE,
+removes old mutation.   removes old mutation.  removes old mutation.
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+                                 ▼
+                     Atomic Dexie Transaction
+               (db.tasks + db.outbox + db.conflicts)
+                                 │
+                                 ▼
+                 Mark Conflict: status = 'RESOLVED'
+                                 │
+                                 ▼
+                 Trigger Sync (if online) or
+             Await Reconnection (works 100% offline!)
+```
+
+### Three Resolution Strategies
+1. **Option A — Keep Local Changes**:
+   - Meaning: *"I want to preserve my offline inspection edits."*
+   - Takes `local_snapshot`.
+   - Uses the latest `server_version` as the new optimistic concurrency base (`base_version = server_version`).
+   - Atomically updates local task, queues a new `UPDATE` mutation in `db.outbox`, cleanly removes the old conflicting mutation, and marks the conflict `RESOLVED`.
+   - On the next sync cycle, the server receives matching `version = server_version`, successfully applies the update, increments version, and returns 200 OK.
+2. **Option B — Keep Server Version**:
+   - Meaning: *"Discard my offline changes and accept the cloud's latest version."*
+   - Prompts with a destructive confirmation dialog to prevent accidental data loss.
+   - Replaces local task fields with `server_snapshot`, sets `version = server_version` and `sync_status = SYNCED`.
+   - Atomically removes the old conflicting mutation from `db.outbox` and marks the conflict `RESOLVED`.
+   - Does **not** queue a new update mutation because the server already holds this authoritative state.
+3. **Option C — Custom Merge / Edit**:
+   - Meaning: *"I want to combine specific fields from both versions."*
+   - Interactive modal switches to a granular merge form displaying Title, Description, Status, Priority, and Due Date.
+   - Field operators can click `[Use Local]` or `[Use Server]` for quick field adoption, or type custom notes.
+   - Atomically saves the merged task in IndexedDB with `base_version = server_version`, enqueues a fresh `UPDATE` mutation, deletes the old conflicting mutation, and marks the conflict `RESOLVED`.
+
+### Stale Mutation Prevention & Transaction Atomicity
+To guarantee that an old conflicting mutation cannot resurrect and resend stale versions:
+- Every resolution executes inside a single atomic Dexie transaction: `db.transaction('rw', db.tasks, db.outbox, db.conflicts, async () => { ... })`.
+- The old conflicting mutation is permanently removed/superseded from `db.outbox`, preventing duplicate or stale transmissions.
+- Race-condition guard: If resolution is triggered multiple times rapidly, `conflictRepository` detects `conflict.status === 'RESOLVED'` and safely ignores duplicate invocations.
+
+### Full Offline Resolution Support
+Conflict resolution operates **100% offline**:
+- Field workers can review differences, select Keep Local, Keep Server, or Merge while completely disconnected.
+- Local state and outbox replacement mutations are stored persistently in IndexedDB.
+- When cellular or Wi-Fi connectivity returns, the `online` event or startup sync detects the pending mutation and reconciles with Supabase PostgreSQL without requiring user re-intervention.
+
+### Manual Demo Scenario (Live Verification)
+To reproduce and demonstrate offline conflict resolution live:
+1. **Device / Browser A**: Open `http://localhost:5173/tasks`. Create or identify a task (e.g., *Task Alpha*, version = 1).
+2. **Device / Browser A**: Open Chrome DevTools → Network tab → Toggle **Offline**.
+3. **Device / Browser A**: Edit *Task Alpha* (e.g., change Title to *"Task Alpha — Offline Field Edit"* and Priority to *HIGH*). Task is saved locally in IndexedDB as `PENDING_UPDATE` with `base_version = 1`.
+4. **Device / Browser B (or REST client)**: Send `PUT /api/tasks/:id` with `version = 1` updating the title to *"Task Alpha — Remote Cloud Edit"*. Server increments version to `2`.
+5. **Device / Browser A**: In DevTools, toggle Network back to **Online**.
+6. **Device / Browser A**: Navigate to **Sync Center** (`/sync`) and click **Sync Now**.
+7. **Result**: The engine receives `HTTP 409 VERSION_CONFLICT`. The banner alerts `⚠ Conflicts Requiring Attention (1)`.
+8. Click **Review & Resolve Conflict**: The side-by-side comparison displays local vs. server values with amber divergence highlights.
+9. Choose **Keep Local**, **Keep Server**, or **Merge / Edit**: The conflict is atomically resolved, the old mutation removed, and the resolved task is synchronized with the backend.
+
+---
+
+## 8. Testing & Verification
+
+### 1. Run Complete Frontend Test Suites (189 Assertions)
 ```bash
 cd frontend
 npm test
 ```
-Executes both test suites in sequence:
+Executes all three frontend test suites in sequence:
 - **`npm run test:db` (82 Assertions)**: Database Schema v2/v3, non-destructive migration, atomic entity + outbox writes, mutation coalescing, server tombstones, and lifecycle transitions.
-- **`npm run test:sync` (46 Assertions)**: 
-  - Project CREATE outbox synchronization and UUID preservation.
-  - Task CREATE outbox synchronization and `version 0 -> 1` assignment.
-  - Task UPDATE optimistic concurrency verification (`base_version` transmission and server increment persistence).
-  - Server DELETE synchronization and tombstone physical purge.
-  - Server pull reconciliation and protection of `PENDING_CREATE`, `PENDING_UPDATE`, `PENDING_DELETE`, and `CONFLICT` records.
-  - HTTP 409 conflict detection, snapshot preservation, and Dexie `conflicts` table persistence.
-  - Bounded exponential retries on HTTP 503/transient errors with attempt persistence.
-  - Single sync lock enforcement preventing concurrent duplicate runs.
-  - Offline connectivity guard preventing network attempts while disconnected.
-  - Deterministic mutation ordering ensuring parent project creation precedes child tasks.
+- **`npm run test:sync` (46 Assertions)**: Bi-directional synchronization, task versioning (`0 -> 1`), optimistic concurrency verification, server pull protection, bounded retries on 503, single-sync lock, offline guards, and mutation dependency ordering.
+- **`npm run test:conflict` (61 Assertions)**:
+  - Field divergence calculation (differing vs. identical fields).
+  - Conflict creation upon HTTP 409 response and persistent snapshot storage.
+  - Option A: Keep Local resolution (preserves local snapshot, uses server version base, removes old mutation, queues new UPDATE).
+  - Option B: Keep Server resolution (replaces local task, marks SYNCED, no new mutation, removes old mutation).
+  - Option C: Custom Merge / Edit resolution (saves merged fields, uses server version base, queues replacement mutation).
+  - Offline conflict resolution (resolves while offline, persists in IndexedDB, synchronizes cleanly when online returns).
+  - Multiple conflicts isolation (resolving 1 conflict leaves remaining 2 intact).
+  - Persistence across reload (conflicts survive browser reloads in IndexedDB).
+  - Duplicate resolution protection (prevents redundant mutation creation).
+  - Stale mutation resend prevention (verifies old mutation can never be resent).
 
 ### 2. Run Backend REST API Test Suite (41 Assertions)
 ```bash
@@ -361,11 +474,11 @@ Verifies health check, project CRUD, task creation and versioning, optimistic co
 cd frontend
 npm run build
 ```
-Compiles Vite production bundle with PWA service worker precaching, Dexie schema v3, and Sync Center UI.
+Compiles Vite production bundle with PWA service worker precaching, Dexie schema v3, and interactive Conflict Resolution UI.
 
 ---
 
-## 8. How to Run Locally
+## 9. How to Run Locally
 
 ### 1. Backend Server
 ```bash

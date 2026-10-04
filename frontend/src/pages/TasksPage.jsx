@@ -9,10 +9,13 @@ import {
   CheckCircle2,
   Circle,
   Database,
-  ArrowUpDown
+  ArrowUpDown,
+  AlertTriangle
 } from 'lucide-react';
 import { taskRepository } from '../db/repositories/taskRepository';
 import { projectRepository } from '../db/repositories/projectRepository';
+import conflictRepository from '../db/repositories/conflictRepository';
+import ConflictResolutionModal from '../components/ConflictResolutionModal';
 import { TASK_STATUS, TASK_PRIORITY } from '../db/schema';
 
 export function TasksPage() {
@@ -22,6 +25,8 @@ export function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [actionNotice, setActionNotice] = useState('');
+  const [selectedConflict, setSelectedConflict] = useState(null);
+  const [isConflictModalOpen, setIsConflictModalOpen] = useState(false);
 
   // Form states
   const [title, setTitle] = useState('');
@@ -109,6 +114,20 @@ export function TasksPage() {
       await loadData();
     } catch (err) {
       alert(`Error deleting task: ${err.message}`);
+    }
+  };
+
+  const handleOpenConflict = async (taskId) => {
+    try {
+      const conflict = await conflictRepository.getPendingConflictByEntity('task', taskId);
+      if (conflict) {
+        setSelectedConflict(conflict);
+        setIsConflictModalOpen(true);
+      } else {
+        alert('No active conflict record found for this task in IndexedDB.');
+      }
+    } catch (err) {
+      alert(`Error loading conflict: ${err.message}`);
     }
   };
 
@@ -325,7 +344,18 @@ export function TasksPage() {
                 </div>
 
                 {/* Metadata & Actions */}
-                <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
+                <div className="flex flex-wrap items-center gap-3 shrink-0 self-end sm:self-center">
+                  {task.sync_status === 'CONFLICT' && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenConflict(task.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold text-white bg-amber-500 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20 cursor-pointer"
+                    >
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      <span>Resolve Conflict</span>
+                    </button>
+                  )}
+
                   <span
                     className={`text-[10px] font-semibold px-2 py-0.5 rounded font-mono ${
                       task.priority === TASK_PRIORITY.HIGH
@@ -348,6 +378,8 @@ export function TasksPage() {
                         ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
                         : task.sync_status === 'PENDING_CREATE'
                         ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+                        : task.sync_status === 'CONFLICT'
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                         : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/30'
                     }`}
                   >
@@ -367,6 +399,21 @@ export function TasksPage() {
           })}
         </div>
       )}
+
+      {/* Conflict Resolution Modal */}
+      <ConflictResolutionModal
+        conflict={selectedConflict}
+        isOpen={isConflictModalOpen}
+        onClose={() => {
+          setIsConflictModalOpen(false);
+          setSelectedConflict(null);
+        }}
+        onResolved={(strategy) => {
+          setActionNotice(`Conflict resolved using ${strategy}.`);
+          setTimeout(() => setActionNotice(''), 3000);
+          loadData();
+        }}
+      />
     </div>
   );
 }

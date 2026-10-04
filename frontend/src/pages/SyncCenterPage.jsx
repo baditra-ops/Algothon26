@@ -24,7 +24,8 @@ import {
   clearLocalDatabase,
   seedDevelopmentData
 } from '../db/devTools';
-import { syncManager, syncState, SYNC_STATE } from '../sync/index.js';
+import { syncManager, syncState, SYNC_STATE, calculateFieldDiffs } from '../sync/index.js';
+import ConflictResolutionModal from '../components/ConflictResolutionModal.jsx';
 
 export function SyncCenterPage() {
   const [stats, setStats] = useState(null);
@@ -34,6 +35,9 @@ export function SyncCenterPage() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState('');
   const [engineState, setEngineState] = useState(syncState.getState());
+  const [selectedConflict, setSelectedConflict] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showResolvedHistory, setShowResolvedHistory] = useState(false);
 
   const loadTelemetry = async () => {
     setLoading(true);
@@ -255,47 +259,153 @@ export function SyncCenterPage() {
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-1">
           <span className="text-xs text-slate-400">Detected Conflicts</span>
-          <div className="text-2xl font-bold text-amber-400">{conflicts.length}</div>
-          <span className="text-[11px] text-amber-400/80">Pending Prompt 7 resolution</span>
+          <div className="text-2xl font-bold text-amber-400">
+            {conflicts.filter((c) => c.status === 'PENDING').length}
+          </div>
+          <span className="text-[11px] text-amber-400/80">
+            {conflicts.filter((c) => c.status === 'PENDING').length > 0
+              ? `${conflicts.filter((c) => c.status === 'PENDING').length} requiring attention`
+              : 'All conflicts resolved'}
+          </span>
         </div>
       </div>
 
-      {/* Conflicts Area if any exist */}
-      {conflicts.length > 0 && (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-950/20 p-6 space-y-4">
+      {/* Conflicts Requiring Attention */}
+      {conflicts.filter((c) => c.status === 'PENDING').length > 0 && (
+        <div className="rounded-2xl border border-amber-500/40 bg-amber-950/20 p-6 space-y-4 shadow-xl">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-400" />
-              <h3 className="text-base font-bold text-white">
-                Detected Concurrency Conflicts ({conflicts.length})
-              </h3>
-            </div>
-            <span className="text-xs font-mono text-amber-300">Prompt 7 Ready</span>
-          </div>
-          <p className="text-xs text-slate-300">
-            Version conflicts detected via HTTP 409 responses. Both local and server snapshots are preserved without automatic data loss.
-            Interactive resolution controls will be introduced in Prompt 7.
-          </p>
-
-          <div className="space-y-2">
-            {conflicts.map((c) => (
-              <div
-                key={c.id}
-                className="rounded-lg border border-amber-500/20 bg-slate-950 p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-              >
-                <div>
-                  <span className="font-semibold text-white uppercase">[{c.entity_type}]</span>
-                  <span className="text-slate-400 ml-2 font-mono">Entity: {c.entity_id.slice(0, 8)}...</span>
-                  <span className="text-amber-400 ml-2 font-mono">
-                    Local Base v{c.base_version} vs Server v{c.server_version}
-                  </span>
-                </div>
-                <span className="px-2 py-0.5 rounded font-mono font-semibold text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20">
-                  {c.status}
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">
+                  Conflicts Requiring Attention ({conflicts.filter((c) => c.status === 'PENDING').length})
+                </h3>
+                <span className="text-xs text-amber-300">
+                  HTTP 409 Optimistic Version Divergence Detected
                 </span>
               </div>
-            ))}
+            </div>
+            <span className="px-2.5 py-1 rounded-full text-xs font-mono font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              Needs User Decision
+            </span>
           </div>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            These tasks were updated concurrently by another user while you worked offline. FIELDNOTE preserved both versions without overwriting any data.
+            Review each conflict to choose Keep Local, Keep Server, or Custom Merge.
+          </p>
+
+          <div className="space-y-3">
+            {conflicts
+              .filter((c) => c.status === 'PENDING')
+              .map((c) => {
+                const diffs = calculateFieldDiffs(c.local_snapshot, c.server_snapshot);
+                const diffFields = diffs.filter((d) => d.isDifferent).map((d) => d.label);
+
+                return (
+                  <div
+                    key={c.id}
+                    className="rounded-xl border border-amber-500/30 bg-slate-950 p-4 space-y-3"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-white text-sm">
+                            {c.local_snapshot?.title || c.server_snapshot?.title || 'Untitled Task'}
+                          </span>
+                          <span className="px-2 py-0.5 rounded font-mono font-semibold text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                            {c.status}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 font-mono">
+                          <span>Entity: {c.entity_id.slice(0, 8)}...</span>
+                          <span>·</span>
+                          <span className="text-cyan-400">Local Base: v{c.base_version ?? 0}</span>
+                          <span>·</span>
+                          <span className="text-emerald-400">Server: v{c.server_version ?? 1}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedConflict(c);
+                          setIsModalOpen(true);
+                        }}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-500 hover:bg-amber-400 transition-colors shadow-lg shadow-amber-500/20 cursor-pointer shrink-0"
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                        <span>Review & Resolve Conflict</span>
+                      </button>
+                    </div>
+
+                    {diffFields.length > 0 && (
+                      <div className="pt-2 border-t border-slate-900 flex items-center gap-2 text-xs">
+                        <span className="text-slate-500 font-medium">Conflicting Fields:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {diffFields.map((f) => (
+                            <span
+                              key={f}
+                              className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-950/60 text-amber-300 border border-amber-900/50"
+                            >
+                              {f}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {/* Resolved Conflicts History (Collapsible) */}
+      {conflicts.filter((c) => c.status === 'RESOLVED').length > 0 && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setShowResolvedHistory(!showResolvedHistory)}
+              className="text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>{showResolvedHistory ? '▼' : '▶'}</span>
+              <span>Resolved Conflicts History ({conflicts.filter((c) => c.status === 'RESOLVED').length})</span>
+            </button>
+            <span className="text-[11px] text-slate-500 font-mono">Audit Log</span>
+          </div>
+
+          {showResolvedHistory && (
+            <div className="space-y-2 pt-2">
+              {conflicts
+                .filter((c) => c.status === 'RESOLVED')
+                .map((rc) => (
+                  <div
+                    key={rc.id}
+                    className="p-3 rounded-lg bg-slate-950 border border-slate-850 text-xs flex items-center justify-between"
+                  >
+                    <div>
+                      <span className="font-semibold text-slate-300">
+                        {rc.local_snapshot?.title || rc.server_snapshot?.title || 'Task'}
+                      </span>
+                      <span className="text-slate-500 ml-2 font-mono">
+                        v{rc.base_version} → v{rc.server_version}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                        {rc.resolution}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {new Date(rc.resolved_at || rc.updated_at).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -463,6 +573,21 @@ export function SyncCenterPage() {
           <span>Wipe Local IndexedDB Database</span>
         </button>
       </div>
+
+      {/* Conflict Resolution Modal */}
+      <ConflictResolutionModal
+        conflict={selectedConflict}
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedConflict(null);
+        }}
+        onResolved={(strategy) => {
+          setNotice(`Conflict resolved using ${strategy}. Synchronization updated.`);
+          setTimeout(() => setNotice(''), 4000);
+          loadTelemetry();
+        }}
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@
 import db from '../db/database.js';
 import { SYNC_STATUS, MUTATION_STATUS } from '../db/schema.js';
 import outboxRepository from '../db/repositories/outboxRepository.js';
+import conflictRepository from '../db/repositories/conflictRepository.js';
 import * as api from '../services/api.js';
 
 export const MAX_RETRIES = 3;
@@ -289,17 +290,14 @@ export async function processMutation(mutation) {
             }
 
             // 2. Persist explicit conflict snapshot in db.conflicts
-            await db.conflicts.put({
-              id: generateId(),
+            await conflictRepository.recordConflict({
               entity_type: 'task',
               entity_id,
               mutation_id: mutation.id,
               local_snapshot: localTask ? { ...localTask } : null,
               server_snapshot: serverTaskSnapshot,
               base_version: base_version,
-              server_version: serverTaskSnapshot?.version || null,
-              created_at: new Date().toISOString(),
-              status: 'PENDING'
+              server_version: serverTaskSnapshot?.version || null
             });
 
             // 3. Mark mutation as CONFLICT (do not complete, do not retry)
